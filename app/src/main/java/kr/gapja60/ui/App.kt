@@ -309,7 +309,7 @@ private fun RecitePanel(s: AppState) {
     XunChips(s)
     RangeRow(s)
     Label("반복")
-    Chips(listOf(1 to "1회", 3 to "3회", 5 to "5회", 0 to "무한"), { s.repeat == it }) { s.setRepeat(it) }
+    Chips(listOf(1 to "1회", 3 to "3회", 5 to "5회", 0 to "무한"), { s.repeat == it }) { s.changeRepeat(it) }
     Label("잠들기 타이머")
     Chips(listOf(0 to "끔", 15 to "15분", 30 to "30분", 60 to "60분"), { s.sleepMin == it }) { s.setSleep(it) }
 }
@@ -440,12 +440,12 @@ private fun PlayerBar(s: AppState) {
                 RoundBtn("▶▶", "다음", 52) { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); s.skip(1) }
             }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                RoundBtn("−", "느리게", 44) { s.setSpeed(s.speed - 0.25f) }
+                RoundBtn("−", "느리게", 44) { s.changeSpeed(s.speed - 0.25f) }
                 Slider(
-                    value = s.speed, onValueChange = { s.setSpeed(it) }, valueRange = 0.5f..5f, steps = 17,
+                    value = s.speed, onValueChange = { s.changeSpeed(it) }, valueRange = 0.5f..5f, steps = 17,
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp).semantics { contentDescription = "속도 ${s.speed}배" },
                 )
-                RoundBtn("+", "빠르게", 44) { s.setSpeed(s.speed + 0.25f) }
+                RoundBtn("+", "빠르게", 44) { s.changeSpeed(s.speed + 0.25f) }
                 Text("${"%.2f".format(Locale.US, s.speed).trimEnd('0').trimEnd('.')}×", Modifier.width(56.dp), textAlign = TextAlign.End,
                     fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }

@@ -131,7 +131,7 @@ class AppState(ctx: Context) {
     fun clearRange() { start = null; abA = null; abB = null; abPicking = false; xuns = (0..5).toSet(); prefs.xuns = xuns }
 
     // ---- 재생 ----
-    fun setSpeed(v: Float) {
+    fun changeSpeed(v: Float) {
         val s = ((v * 4).roundToInt() / 4f).coerceIn(0.5f, 5f)
         speed = s
         prefs.speed = s
@@ -185,7 +185,7 @@ class AppState(ctx: Context) {
         qAnswer = -1; qChoices = emptyList(); qPicked = -1
     }
 
-    fun setRepeat(v: Int) { repeat = v; prefs.repeat = v }
+    fun changeRepeat(v: Int) { repeat = v; prefs.repeat = v }
 
     fun setSleep(min: Int) {
         sleepMin = min
