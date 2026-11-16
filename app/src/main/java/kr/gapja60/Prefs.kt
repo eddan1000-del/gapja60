@@ -21,7 +21,7 @@ class Prefs(ctx: Context) {
     fun voiceInfo(pack: String): String = p.getString("voiceInfo_$pack", "") ?: ""
     fun setVoiceInfo(pack: String, v: String) = p.edit().putString("voiceInfo_$pack", v).apply()
 
-    /** 음색: 0 자연스럽게, 1 부드럽게(기본), 2 아주 부드럽게 */
+    /** 음색: 0 자연, 1 부드럽게(기본), 2 더 부드럽게 */
     var softness: Int get() = int("soft", 1); set(v) = setInt("soft", v)
     var voiceVersion: Int get() = int("voiceVer", 0); set(v) = setInt("voiceVer", v)
     /** 배경 소리 크기: 0 없음, 1 작게, 2 보통 */
