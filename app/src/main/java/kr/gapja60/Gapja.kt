@@ -28,10 +28,10 @@ object Gapja {
  * - 역행 뒤집기: 세로로 아래→위. 갑 열(갑인·갑진·갑오·갑신·갑술·갑자) → 을 열 → … → 계 열
  */
 enum class Direction(val label: String, val sample: String, val reverse: Boolean, val vertical: Boolean) {
-    FORWARD("순행", "갑자 → 을축 → 병인", false, false),
-    BACKWARD("역행", "계해 → 임술 → 신유", true, false),
-    FORWARD_FLIP("순행 뒤집기", "갑자 → 갑술 → 갑신", false, true),
-    BACKWARD_FLIP("역행 뒤집기", "갑인 → 갑진 → 갑오", true, true);
+    FORWARD("순행", "갑자 → 을축 …", false, false),
+    BACKWARD("역행", "계해 → 임술 …", true, false),
+    FORWARD_FLIP("순행 뒤집기", "갑자 → 갑술 …", false, true),
+    BACKWARD_FLIP("역행 뒤집기", "갑인 → 갑진 …", true, true);
 
     /** 이 방향의 전체 60개 순서(간지 번호 0~59). */
     fun order(): List<Int> = when {
