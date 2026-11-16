@@ -523,7 +523,7 @@ private fun SleepScreen(s: AppState) {
             OutlinedButton(onClick = { s.toggle() }, Modifier.weight(1f).height(56.dp),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) { Text(if (s.playing) "멈춤" else "재생", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             OutlinedButton(onClick = { s.exitSleep() }, Modifier.weight(1f).height(56.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) { Text("수면 모드 끝내기", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) { Text("끝내기", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
 }

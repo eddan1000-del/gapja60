@@ -56,7 +56,7 @@ tap '빈칸'; sleep 2; shot 7-blank
 tap '기록'; sleep 2; shot 8-stats
 tap '암송'; sleep 2; tap '☾ 수면'; sleep 6; shot 10-sleep
 adb shell dumpsys media_session | grep -m1 -E "state=PlaybackState" | sed 's/^/SLEEP /' >> shots/report.txt
-tap '수면 모드 끝내기'; sleep 2
+tap '끝내기'; sleep 2
 tap '설정'; sleep 6; shot 9-settings
 adb shell input swipe 160 560 160 160 800; sleep 2; shot 9b-settings; adb shell input swipe 160 560 160 160 800; sleep 2; shot 9c-settings
 adb logcat -d > shots/logcat.txt
