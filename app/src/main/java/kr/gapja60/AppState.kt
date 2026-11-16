@@ -235,6 +235,15 @@ class AppState(ctx: Context) {
         stop(); voices.clear(pack); voiceReady = false
     }
 
+    var hqVoice by mutableStateOf(prefs.hqVoice)
+
+    /** 고품질 목소리 켜기/끄기: 바꾸면 지금 목소리를 다시 만든다 */
+    fun changeHq(v: Boolean) {
+        if (v == hqVoice) return
+        hqVoice = v; prefs.hqVoice = v
+        stop(); voices.clear(pack); voiceReady = false
+    }
+
     fun changeBg(v: Int) { bgLevel = v; prefs.bgLevel = v; sendBg() }
 
     private fun sendBg() {
