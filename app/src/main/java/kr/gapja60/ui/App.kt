@@ -234,7 +234,7 @@ private fun GapjaGrid(s: AppState, onTap: () -> Unit) {
             rot.snapTo(-90f); rot.animateTo(0f, tween(230))
         }
     }
-    val inSeq = remember(s.xuns, s.start, s.abA, s.abB, s.direction) { s.sequence().toSet() }
+    val inSeq = remember(s.groups, s.start, s.abA, s.abB, s.direction) { s.sequence().toSet() }
     val showCurrent = !(s.mode == Mode.NEXT && s.qPicked < 0 && (s.curKind == "p"))
     val stats = s.mode == Mode.STATS
     @Suppress("UNUSED_VARIABLE") val v = s.statsVersion
