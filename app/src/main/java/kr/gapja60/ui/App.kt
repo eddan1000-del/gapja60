@@ -45,6 +45,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -161,12 +162,14 @@ private fun Home(s: AppState) {
                 Mode.entries.forEach { m ->
                     Tab(selected = s.mode == m, onClick = {
                         if (s.mode != m) { s.stop(); s.mode = m }
-                    }, text = { Text(m.label, maxLines = 1) })
+                    }, text = { Text(m.label, maxLines = 1, softWrap = false) })
                 }
             }
             Spacer(Modifier.height(12.dp))
-            GapjaGrid(s) { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
-            Spacer(Modifier.height(14.dp))
+            if (s.mode != Mode.NEXT) {
+                GapjaGrid(s) { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
+                Spacer(Modifier.height(14.dp))
+            }
             when (s.mode) {
                 Mode.RECITE -> RecitePanel(s)
                 Mode.BLANK -> BlankPanel(s)
@@ -206,9 +209,9 @@ private fun DirectionCards(s: AppState, onPick: () -> Unit) {
                         .semantics { contentDescription = "${d.label}, ${d.sample}" + if (sel) ", 선택됨" else "" }
                         .padding(14.dp),
                 ) {
-                    Text((if (d.reverse) "← " else "→ ") + d.label, color = fg, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text(d.label, color = fg, fontWeight = FontWeight.Bold, fontSize = 17.sp, maxLines = 1, softWrap = false)
                     Spacer(Modifier.height(4.dp))
-                    Text(d.sample, color = fg.copy(alpha = 0.8f), fontFamily = SerifGapja, fontSize = 16.sp)
+                    Text((if (d.reverse) "← " else "→ ") + d.sample, color = fg.copy(alpha = 0.85f), fontFamily = SerifGapja, fontSize = 15.sp, maxLines = 1, softWrap = false)
                 }
             }
         }
@@ -232,10 +235,10 @@ private fun GapjaGrid(s: AppState, onTap: () -> Unit) {
 
     Column(
         Modifier.graphicsLayer { rotationY = rot.value; cameraDistance = 14f * density },
-        verticalArrangement = Arrangement.spacedBy(5.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         for (x in 0..5) {
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 for (k in 0..9) {
                     val i = x * 10 + k
                     val cur = showCurrent && s.curIdx == i && s.curKind in setOf("g", "s", "t")
@@ -252,16 +255,16 @@ private fun GapjaGrid(s: AppState, onTap: () -> Unit) {
                     val mark = i == s.abA || i == s.abB || (i == s.start && s.abA == null)
                     val dim = (s.mode == Mode.RECITE || s.mode == Mode.BLANK) && i !in inSeq
                     Column(
-                        Modifier.weight(1f).aspectRatio(0.78f).clip(RoundedCornerShape(10.dp)).background(bg)
-                            .border(if (mark) 2.dp else 0.5.dp, if (mark) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                        Modifier.weight(1f).aspectRatio(0.74f).clip(RoundedCornerShape(9.dp)).background(bg)
+                            .border(if (mark) 2.dp else 0.5.dp, if (mark) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), RoundedCornerShape(9.dp))
                             .alpha(if (dim) 0.35f else 1f)
                             .clickable { onTap(); s.tapCell(i) }
                             .semantics { contentDescription = "${Gapja.hangul(i, shown.flip)}, ${i + 1}번째" },
                         verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         val main = when (s.script) { Script.HANGUL -> Gapja.hangul(i, shown.flip); else -> Gapja.hanja(i, shown.flip) }
-                        Text(main, fontFamily = SerifGapja, color = fg, fontSize = 15.sp, maxLines = 1, softWrap = false)
-                        if (s.script == Script.BOTH) Text(Gapja.hangul(i, shown.flip), color = fg.copy(alpha = 0.7f), fontSize = 9.sp, maxLines = 1)
+                        Text(main, fontFamily = SerifGapja, color = fg, fontSize = 13.sp, lineHeight = 14.sp, maxLines = 1, softWrap = false)
+                        if (s.script == Script.BOTH) Text(Gapja.hangul(i, shown.flip), color = fg.copy(alpha = 0.7f), fontSize = 9.sp, lineHeight = 10.sp, maxLines = 1, softWrap = false)
                     }
                 }
             }
@@ -430,7 +433,7 @@ private fun PlayerBar(s: AppState) {
                         Text(if (idx < 0) (if (s.curKind == "b" || s.curKind == "p") "?" else "—") else s.label(idx),
                             fontFamily = SerifGapja, fontSize = 40.sp, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                         val sub = if (idx >= 0) s.sub(idx) else null
-                        Text(listOfNotNull(sub, if (s.curTotal > 0) "${s.curPos} / ${s.curTotal}" else null, s.direction.label).joinToString("  ·  "),
+                        Text(listOfNotNull(sub, if (s.curTotal > 0) "${s.curPos} / ${s.curTotal}" else null).ifEmpty { listOf(s.direction.label) }.joinToString("  ·  "),
                             fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                     }
                 }
@@ -446,6 +449,7 @@ private fun PlayerBar(s: AppState) {
                 RoundBtn("−", "느리게", 44) { s.changeSpeed(s.speed - 0.25f) }
                 Slider(
                     value = s.speed, onValueChange = { s.changeSpeed(it) }, valueRange = 0.5f..5f, steps = 17,
+                    colors = SliderDefaults.colors(activeTickColor = Color.Transparent, inactiveTickColor = Color.Transparent),
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp).semantics { contentDescription = "속도 ${s.speed}배" },
                 )
                 RoundBtn("+", "빠르게", 44) { s.changeSpeed(s.speed + 0.25f) }
