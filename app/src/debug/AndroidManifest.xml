@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 디버그 빌드 전용: 목소리 품질 비교 실험 화면 (릴리스 APK에는 포함되지 않음) -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name=".ExperimentActivity" android:exported="true" />
+    </application>
+</manifest>
