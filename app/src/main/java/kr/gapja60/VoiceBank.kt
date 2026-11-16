@@ -59,7 +59,7 @@ object VoicePacks {
 class VoiceBank(private val ctx: Context) {
     companion object {
         const val TAG = "Gapja60"
-        const val VOICE_VERSION = 6
+        const val VOICE_VERSION = 8
     }
 
     val root = File(ctx.filesDir, "voice").apply { mkdirs() }
@@ -74,7 +74,7 @@ class VoiceBank(private val ctx: Context) {
     val noise get() = File(root, "bg_brown.wav")
 
 
-    /** 음성 처리 방식이 바뀌면(버전 올림) 만들어 둔 음성을 모두 지워 다시 만들게 한다 */
+    /** 음성 처리 방식이 바뀌면(버전 올림, 8 = 1.0.19 방식으로 되돌림) 만들어 둔 음성을 모두 지워 다시 만들게 한다 */
     fun upgradeIfNeeded(prefs: Prefs) {
         if (prefs.voiceVersion >= VOICE_VERSION) return
         VoicePacks.ALL.forEach { clear(it) }
