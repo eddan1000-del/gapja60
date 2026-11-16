@@ -48,6 +48,8 @@ data class VoicePack(
     val fastNetwork: Boolean = true,
     /** 네트워크 음성은 같은 설정에서 기기 안 음성보다 약 30Hz 높게 나와, 빠른 음성의 음높이를 이만큼 더 낮춰 맞춘다 */
     val fastPitchScale: Float = 1f,
+    /** 밝은 음색: 또렷함(3kHz)·공기(9kHz 이상) 대역을 조금 더 살리고 저음 보강은 뺀다 */
+    val bright: Boolean = false,
 )
 
 object VoicePacks {
@@ -58,6 +60,9 @@ object VoicePacks {
         VoicePack("f_clear", "여성 · 또렷", "중저음, 또박또박", listOf("ism", "kob"), 0.89f, 0.9f, fastPitchScale = 0.95f),
         VoicePack("m_low", "남성 · 저음", "맑은 저음, 천천히", listOf("kod", "koc"), 0.84f, 0.82f, fastPitchScale = 1.07f),
         VoicePack("m_clear", "남성 · 또렷", "중저음, 또박또박", listOf("koc", "kod"), 0.85f, 0.9f, fastPitchScale = 1.06f),
+        // 미소년: 남성 kod의 음높이를 올려 젊고 맑게. 실험(2026-11-16)에서 1.15~1.2가 기본 주파수 약 148~155Hz
+        // (높지 않은 젊은 남성 음역)로, 맑음 지수(HNR 4.6~5.0dB)·떨림(3.2%)이 남성 목소리 중 가장 좋았다
+        VoicePack("m_boy", "남성 · 미소년", "높지 않은 톤, 달콤하고 맑고 밝게", listOf("kod", "koc"), 1.18f, 0.9f, bright = true),
         VoicePack("default", "기기 기본", "이 폰의 기본 한국어 음성, 맑은 중저음", emptyList(), 0.9f, 0.86f, fastNetwork = false),
     )
     fun byId(id: String) = ALL.firstOrNull { it.id == id } ?: ALL.last()
@@ -266,7 +271,8 @@ class VoiceBank(private val ctx: Context) {
                 val r = tts.synthesizeToFile(text, Bundle(), tmp, file.name)
                 val code = if (r != TextToSpeech.SUCCESS) -100 + r else (withTimeoutOrNull(20_000) { d.await() } ?: -200)
                 if (code != 0 || tmp.length() < 500) { tmp.delete(); return if (code == 0) -300 else code }
-                val style = SoftVoice.STYLES[Prefs(ctx).softness.coerceIn(0, 2)]
+                val base = SoftVoice.STYLES[Prefs(ctx).softness.coerceIn(0, 2)]
+                val style = if (p.bright) base.copy(presenceDb = base.presenceDb + 1.0, airDb = base.airDb + 1.0, lowShelfDb = 0.0) else base
                 withContext(Dispatchers.Default) {
                     if (!polish(tmp, file, style, leadMs)) tmp.renameTo(file) else tmp.delete()
                 }
