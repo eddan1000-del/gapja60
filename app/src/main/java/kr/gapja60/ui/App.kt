@@ -158,6 +158,7 @@ private fun Home(s: AppState) {
         // 상단
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("육십갑자", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            TextButton(onClick = { s.startSleep() }) { Text("☾ 수면") }
             TextButton(onClick = { s.showSettings = true }) { Text("설정") }
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {

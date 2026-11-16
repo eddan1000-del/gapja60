@@ -54,11 +54,11 @@ adb shell am start -n $PKG/kr.gapja60.MainActivity; sleep 3
 tap '잇기'; sleep 2; tap '시작'; sleep 5; shot 6-next
 tap '빈칸'; sleep 2; shot 7-blank
 tap '기록'; sleep 2; shot 8-stats
-tap '암송'; sleep 2; adb shell input swipe 540 1500 540 700 800; sleep 2; tap '☾  수면 모드로 듣기'; sleep 6; shot 10-sleep
+tap '암송'; sleep 2; tap '☾ 수면'; sleep 6; shot 10-sleep
 adb shell dumpsys media_session | grep -m1 -E "state=PlaybackState" | sed 's/^/SLEEP /' >> shots/report.txt
 tap '수면 모드 끝내기'; sleep 2
 tap '설정'; sleep 6; shot 9-settings
-adb shell input swipe 540 1700 540 500 800; sleep 2; shot 9b-settings; adb shell input swipe 540 1700 540 500 800; sleep 2; shot 9c-settings
+adb shell input swipe 160 560 160 160 800; sleep 2; shot 9b-settings; adb shell input swipe 160 560 160 160 800; sleep 2; shot 9c-settings
 adb logcat -d > shots/logcat.txt
 echo "--- TTS log ---" >> shots/report.txt
 grep -E "Gapja60|TextToSpeech|TtsService|GoogleTTS|tts" shots/logcat.txt | grep -v Phenotype | head -60 >> shots/report.txt
