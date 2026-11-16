@@ -55,6 +55,13 @@ data class VoicePack(
     val relaxed: Boolean = false,
     /** 이 목소리만 다시 만들어야 할 때 올리는 번호 */
     val ver: Int = 1,
+    /**
+     * 힘 뺀 억양: 낱말 하나만 읽히면 엔진이 또박또박 강조하는 억양을 쓴다.
+     * "갑자, 갑자."처럼 이어 읽힌 뒤 앞부분만 잘라 쓰면, 말을 이어 가는 중간의 가벼운 억양을 얻는다.
+     */
+    val softProsody: Boolean = false,
+    /** 보통·느린 음성에도 네트워크(신경망) 음성을 우선 사용(만들 때만 인터넷) */
+    val normalNetwork: Boolean = false,
 )
 
 object VoicePacks {
@@ -69,7 +76,12 @@ object VoicePacks {
         // (높지 않은 젊은 남성 음역)로, 맑음 지수(HNR 4.6~5.0dB)·떨림(3.2%)이 남성 목소리 중 가장 좋았다
         // 2판: 사용자 피드백 '힘이 들어가 부담스럽다' → 음높이 1.18→1.14(약 150Hz, 실험상 1.15에서 떨림 3.2%·HNR 4.6dB),
         //      말 속도 0.9→0.86, 밝게 살리던 처리를 '힘 뺀 음색'으로
-        VoicePack("m_boy", "남성 · 미소년", "높지 않은 톤, 맑고 편안하게", listOf("kod", "koc"), 1.14f, 0.86f, relaxed = true, ver = 2),
+        VoicePack("m_boy", "남성 · 미소년", "높지 않은 톤, 맑고 편안하게", listOf("kod", "koc"), 1.12f, 0.86f,
+            relaxed = true, softProsody = true, normalNetwork = true, ver = 3),
+        // 미소년 · 부드러움: 여성 목소리를 낮춰 만든 소년 톤(애니메이션 미소년 역을 여성 성우가 맡는 방식).
+        // 실험: kob 네트워크 0.85 → 약 165Hz, 떨림 2.8%, HNR 5.4dB
+        VoicePack("b_boy", "미소년 · 부드러움", "여성 목소리를 낮춘 부드러운 소년 톤", listOf("kob", "ism"), 0.85f, 0.86f,
+            relaxed = true, softProsody = true, normalNetwork = true),
         VoicePack("default", "기기 기본", "이 폰의 기본 한국어 음성, 맑은 중저음", emptyList(), 0.9f, 0.86f, fastNetwork = false),
     )
     fun byId(id: String) = ALL.firstOrNull { it.id == id } ?: ALL.last()
@@ -244,7 +256,8 @@ class VoiceBank(private val ctx: Context) {
         try {
             val lang = tts.setLanguage(Locale.KOREAN)
             if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) return Result.NoKorean
-            val v = chooseVoice(tts, p, preferNetwork = variant == Variant.FAST && p.fastNetwork && !forceLocal)
+            val wantNet = if (variant == Variant.FAST) p.fastNetwork else p.normalNetwork
+            val v = chooseVoice(tts, p, preferNetwork = wantNet && !forceLocal)
             if (v != null) runCatching { tts.voice = v }
             val usingNetwork = v?.isNetworkConnectionRequired == true
             val rate = when (variant) {
@@ -270,25 +283,35 @@ class VoiceBank(private val ctx: Context) {
 
             val jobs = ArrayList<Pair<String, File>>()
             // 마침표를 붙여 끝이 내려가는 차분한 평서 억양으로 읽게 한다
-            for (i in 0..59) jobs += (Gapja.hangul(i) + ".") to voice(p, i, variant)
+            for (i in 0..59) jobs += Gapja.hangul(i) to voice(p, i, variant)
             if (variant == Variant.NORMAL) jobs += "다음은?" to next(p)
+            fun isGapja(w: String) = w.length == 2 && w != "다음은?"
             // 빠른 음성은 앞 무음을 짧게(간지 사이가 늘어지지 않게)
             val leadMs = if (variant == Variant.FAST) 15 else 60
 
-            suspend fun synth(text: String, file: File): Int {
+            suspend fun synth(word: String, file: File, soft: Boolean = p.softProsody && isGapja(word)): Int {
+                val text = when {
+                    !isGapja(word) -> word
+                    soft -> "$word, $word."
+                    else -> "$word."   // 마침표: 끝이 내려가는 차분한 평서 억양
+                }
                 val tmp = File(file.parentFile, file.name + ".tmp")
                 val d = CompletableDeferred<Int>()
                 pending[file.name] = d
                 val r = tts.synthesizeToFile(text, Bundle(), tmp, file.name)
                 val code = if (r != TextToSpeech.SUCCESS) -100 + r else (withTimeoutOrNull(20_000) { d.await() } ?: -200)
                 if (code != 0 || tmp.length() < 500) { tmp.delete(); return if (code == 0) -300 else code }
+                if (soft && !withContext(Dispatchers.Default) { keepFirstPhrase(tmp) }) {
+                    // 쉼을 찾지 못하면 낱말 하나 읽기로 대신한다
+                    tmp.delete(); return synth(word, file, soft = false)
+                }
                 val base = SoftVoice.STYLES[Prefs(ctx).softness.coerceIn(0, 2)]
                 val style = if (p.relaxed) base.copy(
-                    presenceDb = base.presenceDb - 1.0,
+                    presenceDb = base.presenceDb - 1.5,
                     airDb = base.airDb + 0.5,
                     lowShelfDb = 0.5,
                     compRatio = 1.2,
-                    targetRms = base.targetRms * 0.85,
+                    targetRms = base.targetRms * 0.8,
                     fadeInMs = base.fadeInMs + 15,
                 ) else base
                 withContext(Dispatchers.Default) {
@@ -440,6 +463,54 @@ class VoiceBank(private val ctx: Context) {
         }
         repeat(rate / 20) { out += 0 }
         return out.toShortArray()
+    }
+
+    /** wav(16비트 PCM)를 읽어 모노 표본과 표본율을 돌려준다 */
+    private fun readPcm(f: File): Pair<ShortArray, Int>? = runCatching {
+        val bytes = f.readBytes()
+        val bb = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        if (bytes.size < 44 || String(bytes, 0, 4) != "RIFF") return null
+        var pos = 12; var rate = 0; var ch = 1; var bits = 16
+        while (pos + 8 <= bytes.size) {
+            val id = String(bytes, pos, 4); val len = bb.getInt(pos + 4)
+            if (id == "fmt ") { ch = bb.getShort(pos + 10).toInt(); rate = bb.getInt(pos + 12); bits = bb.getShort(pos + 22).toInt() }
+            if (id == "data") {
+                if (bits != 16 || rate <= 0) return null
+                val off = pos + 8; val n = min(len, bytes.size - off) / (2 * ch)
+                return ShortArray(n) { bb.getShort(off + it * 2 * ch) } to rate
+            }
+            pos += 8 + len + (len and 1)
+        }
+        null
+    }.getOrNull()
+
+    /**
+     * "갑자, 갑자."로 합성한 파일에서 가장 긴 쉼(쉼표 자리, 120ms 이상)을 찾아 그 앞부분만 남긴다.
+     * 낱말 안의 짧은 닫힘(받침 ㅂ 등, 50~80ms)과 구분하려고 가장 긴 쉼을 고른다.
+     */
+    private fun keepFirstPhrase(f: File): Boolean {
+        val (pcm, rate) = readPcm(f) ?: return false
+        val fr = rate / 100
+        val nf = pcm.size / fr
+        if (nf < 20) return false
+        val rms = DoubleArray(nf) { k -> var s = 0.0; for (i in k * fr until (k + 1) * fr) s += pcm[i].toDouble() * pcm[i]; Math.sqrt(s / fr) }
+        val mx = rms.max(); if (mx <= 0) return false
+        val th = mx * 0.05
+        val first = rms.indexOfFirst { it > th }; val last = rms.indexOfLast { it > th }
+        if (first < 0 || last <= first) return false
+        var bestStart = -1; var bestLen = 0; var k = first
+        while (k <= last) {
+            if (rms[k] <= th) {
+                var e = k; while (e <= last && rms[e] <= th) e++
+                if (e - k > bestLen) { bestLen = e - k; bestStart = k }
+                k = e
+            } else k++
+        }
+        if (bestLen < 12) return false
+        val cut = (bestStart + 2) * fr
+        if (cut - first * fr < rate / 6) return false   // 앞부분이 너무 짧으면 실패로 본다
+        writeWav(f, pcm.copyOfRange(0, cut), rate)
+        return true
     }
 
     private fun writeWav(file: File, pcm: ShortArray, rate: Int) {
