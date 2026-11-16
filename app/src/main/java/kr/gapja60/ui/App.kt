@@ -577,7 +577,7 @@ private fun Settings(s: AppState) {
         Chips(kr.gapja60.SoftVoice.NAMES.mapIndexed { i, n -> i to n }, { s.softness == it }) {
             if (it != s.softness) { s.voices.releasePreview(); s.changeSoftness(it); s.showSettings = false }
         }
-        Text("'부드럽게'는 귀를 찌르는 높은 소리를 줄이고 말머리를 둥글게 다듬어, 공간감을 살짝 더합니다. 발음에 중요한 소리는 그대로 둡니다. 바꾸면 지금 목소리를 새로 만듭니다(1~2분).",
+        Text("'부드럽게'는 귀를 찌르는 높은 소리를 줄이고, 낮은 소리를 보태 중저음으로, 말머리는 둥글게 다듬습니다. 울림(잔향)은 넣지 않으며 발음에 중요한 소리는 그대로 둡니다. 바꾸면 지금 목소리를 새로 만듭니다(1~2분).",
             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
         Label("배경 소리 (낮은 바람·빗소리 같은 잡음)")

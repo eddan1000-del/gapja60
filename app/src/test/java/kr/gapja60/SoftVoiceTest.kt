@@ -18,7 +18,7 @@ class SoftVoiceTest {
         val inp = ShortArray(rate / 2) { (Random(1).nextInt(-20000, 20000)).toShort() }
         for (st in SoftVoice.STYLES) {
             val out = SoftVoice.process(inp, rate, st)
-            assertEquals(inp.size + rate * SoftVoice.TAIL_MS / 1000, out.size)
+            assertEquals(inp.size, out.size)   // 잔향 없음 → 길이 그대로
             assertTrue(out.all { it in -32767..32767 })
             assertTrue(out.any { it.toInt() != 0 })
         }
