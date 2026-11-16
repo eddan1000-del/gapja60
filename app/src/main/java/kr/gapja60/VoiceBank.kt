@@ -42,11 +42,11 @@ object VoicePacks {
     val ALL = listOf(
         // 맑은 중저음: 음높이를 많이 내리면 소리가 탁해지므로 살짝만 낮추고(여성 0.9~0.93, 남성 0.84~0.88),
         // 탁함은 음색 처리(300Hz 감쇠, 3kHz 또렷함 보강)로 걷어낸다
-        VoicePack("f_calm", "여성 · 차분", "맑은 중저음, 부드럽고 차분하게", listOf("kob", "ism"), 0.9f, 0.88f),
-        VoicePack("f_clear", "여성 · 또렷", "중저음, 또박또박", listOf("ism", "kob"), 0.89f, 0.92f),
-        VoicePack("m_low", "남성 · 저음", "맑은 저음, 차분하게", listOf("kod", "koc"), 0.84f, 0.88f),
-        VoicePack("m_clear", "남성 · 또렷", "중저음, 또박또박", listOf("koc", "kod"), 0.85f, 0.92f),
-        VoicePack("default", "기기 기본", "이 폰의 기본 한국어 음성, 맑은 중저음", emptyList(), 0.9f, 0.9f),
+        VoicePack("f_calm", "여성 · 차분", "맑은 중저음, 부드럽고 천천히", listOf("kob", "ism"), 0.9f, 0.82f),
+        VoicePack("f_clear", "여성 · 또렷", "중저음, 또박또박", listOf("ism", "kob"), 0.89f, 0.9f),
+        VoicePack("m_low", "남성 · 저음", "맑은 저음, 천천히", listOf("kod", "koc"), 0.84f, 0.82f),
+        VoicePack("m_clear", "남성 · 또렷", "중저음, 또박또박", listOf("koc", "kod"), 0.85f, 0.9f),
+        VoicePack("default", "기기 기본", "이 폰의 기본 한국어 음성, 맑은 중저음", emptyList(), 0.9f, 0.86f),
     )
     fun byId(id: String) = ALL.firstOrNull { it.id == id } ?: ALL.last()
 }
@@ -59,7 +59,7 @@ object VoicePacks {
 class VoiceBank(private val ctx: Context) {
     companion object {
         const val TAG = "Gapja60"
-        const val VOICE_VERSION = 7
+        const val VOICE_VERSION = 6
     }
 
     val root = File(ctx.filesDir, "voice").apply { mkdirs() }
@@ -112,17 +112,11 @@ class VoiceBank(private val ctx: Context) {
         } finally { tts.shutdown() }
     }
 
-    /**
-     * preferNetwork면 구글의 고품질 네트워크(신경망) 음성을 우선 고른다.
-     * 네트워크 음성은 '만들 때'만 인터넷을 쓰고, 만든 파일은 기기에 저장되어 이후 오프라인으로 재생된다.
-     */
-    private fun chooseVoice(tts: TextToSpeech, p: VoicePack, preferNetwork: Boolean): Voice? {
+    private fun chooseVoice(tts: TextToSpeech, p: VoicePack): Voice? {
         val ko = runCatching { tts.voices?.filter { it.locale.language == "ko" } }.getOrNull() ?: return null
         for (k in p.voiceKeys) {
             val c = ko.filter { it.name.contains("-x-$k-") }
-            val net = c.firstOrNull { it.isNetworkConnectionRequired }
-            val local = c.firstOrNull { !it.isNetworkConnectionRequired }
-            (if (preferNetwork) net ?: local else local ?: net)?.let { return it }
+            (c.firstOrNull { !it.isNetworkConnectionRequired } ?: c.firstOrNull())?.let { return it }
         }
         return null
     }
@@ -133,7 +127,7 @@ class VoiceBank(private val ctx: Context) {
     suspend fun preview(p: VoicePack) {
         val tts = previewTts ?: (initTts("com.google.android.tts") ?: initTts(null))?.also { previewTts = it } ?: return
         tts.setLanguage(Locale.KOREAN)
-        chooseVoice(tts, p, Prefs(ctx).hqVoice)?.let { runCatching { tts.voice = it } }
+        chooseVoice(tts, p)?.let { runCatching { tts.voice = it } }
         tts.setPitch(p.pitch); tts.setSpeechRate(p.rate)
         // 미리 듣기는 실제 파일(음색 처리 포함)로 들려주는 것이 정확하므로, 파일이 있으면 그걸 우선 사용
         tts.speak("갑자. 을축. 병인. 정묘.", TextToSpeech.QUEUE_FLUSH, null, "preview")
@@ -143,7 +137,7 @@ class VoiceBank(private val ctx: Context) {
     fun releasePreview() { previewTts?.shutdown(); previewTts = null }
 
     // ───────── 만들기 ─────────
-    suspend fun build(p: VoicePack, onProgress: (Int, Int) -> Unit, forceLocal: Boolean = false): Result {
+    suspend fun build(p: VoicePack, onProgress: (Int, Int) -> Unit): Result {
         withContext(Dispatchers.IO) { writeTones() }
         if (copyFromAssets(p, onProgress)) return Result.Ok
 
@@ -151,14 +145,13 @@ class VoiceBank(private val ctx: Context) {
         try {
             val lang = tts.setLanguage(Locale.KOREAN)
             if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) return Result.NoKorean
-            val v = chooseVoice(tts, p, Prefs(ctx).hqVoice && !forceLocal)
+            val v = chooseVoice(tts, p)
             if (v != null) runCatching { tts.voice = v }
-            val usingNetwork = v?.isNetworkConnectionRequired == true
             tts.setSpeechRate(p.rate)
             tts.setPitch(p.pitch)
             val vname = runCatching { tts.voice?.name }.getOrNull() ?: "한국어"
             Log.i(TAG, "pack=${p.id} engine=${tts.defaultEngine} voice=$vname")
-            Prefs(ctx).setVoiceInfo(p.id, "${p.label} · $vname" + if (usingNetwork) " (고품질)" else "")
+            Prefs(ctx).setVoiceInfo(p.id, "${p.label} · $vname")
 
             val pending = ConcurrentHashMap<String, CompletableDeferred<Int>>()
             tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
@@ -188,18 +181,10 @@ class VoiceBank(private val ctx: Context) {
                 return 0
             }
 
-            var fallbackToLocal = false
-            for ((n, job) in jobs.withIndex()) {
-                val (text, file) = job
+            jobs.forEachIndexed { n, (text, file) ->
                 onProgress(n, jobs.size)
-                if (file.length() > 500) continue
+                if (file.length() > 500) return@forEachIndexed
                 var code = synth(text, file)
-                if (code != 0 && usingNetwork) {
-                    // 고품질(네트워크) 음성이 안 되면(인터넷 없음 등) 한 번 더 시도 후 기기 안 음성으로 처음부터 다시 만든다
-                    // (한 목소리 안에 두 종류 음성이 섞이지 않도록)
-                    delay(2_000); code = synth(text, file)
-                    if (code != 0) { Log.w(TAG, "network voice failed code=$code → local"); fallbackToLocal = true; break }
-                }
                 var tries = 0
                 while (code != 0 && n == 0 && tries < 12) {
                     Log.w(TAG, "synth fail '$text' code=$code, retry $tries")
@@ -220,12 +205,6 @@ class VoiceBank(private val ctx: Context) {
                     else Result.Failed(text, code)
                 }
                 status("")
-            }
-            if (fallbackToLocal) {
-                clear(p)
-                status("인터넷 연결이 없어 기기 안 목소리로 만듭니다")
-                tts.shutdown()
-                return build(p, onProgress, forceLocal = true)
             }
             onProgress(jobs.size, jobs.size)
             return Result.Ok

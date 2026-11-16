@@ -23,8 +23,6 @@ class Prefs(ctx: Context) {
 
     /** 음색: 0 자연, 1 부드럽게(기본), 2 더 부드럽게 */
     var softness: Int get() = int("soft", 1); set(v) = setInt("soft", v)
-    /** 고품질(네트워크 신경망) 목소리 사용: 처음 만들 때만 인터넷 사용 */
-    var hqVoice: Boolean get() = p.getBoolean("hq", true); set(v) = p.edit().putBoolean("hq", v).apply()
     var voiceVersion: Int get() = int("voiceVer", 0); set(v) = setInt("voiceVer", v)
     /** 배경 소리 크기: 0 없음, 1 작게, 2 보통 */
     var bgLevel: Int get() = int("bg", 0); set(v) = setInt("bg", v)

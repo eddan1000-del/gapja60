@@ -126,7 +126,7 @@ private fun VoiceSetup(s: AppState) {
         val e = error
         if (e == null) {
             Text("음성을 준비하고 있습니다 · ${s.pack.label}", style = MaterialTheme.typography.titleMedium)
-            Text(status.ifBlank { "처음 한 번만 필요합니다 · 약 1~2분 · 고품질 목소리는 이때만 인터넷 사용" }, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(status.ifBlank { "처음 한 번만 필요합니다 · 약 1~2분" }, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(20.dp))
             LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)))
             Text("${(progress * 61).toInt()} / 61", Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -572,13 +572,6 @@ private fun Settings(s: AppState) {
         }
         Text("이 폰에 없는 목소리는 목록에 나오지 않습니다. 아직 만들지 않은 목소리의 미리 듣기는 음색 처리 전 소리입니다.",
             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-
-        Label("목소리 품질")
-        Chips(listOf(true to "고품질", false to "기기 안 음성"), { s.hqVoice == it }) {
-            if (it != s.hqVoice) { s.voices.releasePreview(); s.changeHq(it); s.showSettings = false }
-        }
-        Text("'고품질'은 구글의 신경망 목소리로 더 자연스럽습니다. 처음 만들 때(1~2분)만 인터넷을 쓰고, 그 뒤에는 인터넷 없이 재생됩니다. 인터넷이 없으면 자동으로 기기 안 음성으로 만듭니다.",
-            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
         Label("음색")
         Chips(kr.gapja60.SoftVoice.NAMES.mapIndexed { i, n -> i to n }, { s.softness == it }) {
