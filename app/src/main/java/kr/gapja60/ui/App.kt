@@ -577,7 +577,7 @@ private fun Settings(s: AppState) {
         Chips(kr.gapja60.SoftVoice.NAMES.mapIndexed { i, n -> i to n }, { s.softness == it }) {
             if (it != s.softness) { s.voices.releasePreview(); s.changeSoftness(it); s.showSettings = false }
         }
-        Text("웅웅거리는 아주 낮은 소리와 탁한 대역은 걷어내고 또렷한 대역은 살려 맑게 만듭니다. '부드럽게'·'더 부드럽게'는 귀를 찌르는 쇳소리를 단계적으로 더 줄입니다. 울림(잔향)은 넣지 않습니다. 바꾸면 지금 목소리를 새로 만듭니다(1~2분).",
+        Text("웅웅거림과 탁한 대역은 걷어내고, 또렷한 대역과 맨 위 '공기' 대역을 살려 맑고 청량하게 만듭니다. '부드럽게'·'더 부드럽게'는 귀를 찌르는 쇳소리를 단계적으로 더 줄입니다. 울림(잔향)은 넣지 않습니다. 바꾸면 지금 목소리를 새로 만듭니다(1~2분).",
             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
         Label("배경 소리 (낮은 바람·빗소리 같은 잡음)")

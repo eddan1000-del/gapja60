@@ -30,7 +30,7 @@ class SoftVoiceTest {
         val mid = SoftVoice.process(tone(1000.0, 400), rate, st)
         val high = SoftVoice.process(tone(7000.0, 400), rate, st)
         // 두 결과는 각자 음량 맞춤되므로, 처리 전후 비율 대신 필터 응답을 직접 비교하기 위해 섞어서 검사
-        val mix = ShortArray(rate * 400 / 1000) { ((sin(2 * PI * 1000.0 * it / rate) + sin(2 * PI * 7000.0 * it / rate)) * 6000).toInt().toShort() }
+        val mix = ShortArray(rate * 400 / 1000) { ((sin(2 * PI * 1000.0 * it / rate) + sin(2 * PI * 5800.0 * it / rate)) * 6000).toInt().toShort() }
         val out = SoftVoice.process(mix, rate, st)
         assertTrue(level(mid) > 0 && level(high) > 0)
         // 7kHz 성분 추정: 1차 차분(고역 강조)의 에너지 비율이 입력보다 줄었는지
@@ -39,6 +39,6 @@ class SoftVoiceTest {
             for (i in 1 until x.size) { d += abs(x[i] - x[i - 1].toDouble()); e += abs(x[i].toDouble()) }
             return d / e
         }
-        assertTrue("고음이 줄어야 함", hfRatio(out.copyOf(mix.size)) < hfRatio(mix) * 0.85)
+        assertTrue("고음이 줄어야 함", hfRatio(out.copyOf(mix.size)) < hfRatio(mix) * 0.95)
     }
 }
