@@ -18,6 +18,7 @@ jobs:
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - uses: actions/checkout@v5
       - name: 최신 APK 받기
         run: curl -sL -o gapja60.apk "https://github.com/${{ github.repository }}/releases/latest/download/gapja60.apk" && ls -lh gapja60.apk
       - name: 에뮬레이터에서 실행
@@ -27,13 +28,12 @@ jobs:
           target: google_apis
           arch: x86_64
           disable-animations: true
-          script: bash -c 'set -x; mkdir -p shots; adb install -r gapja60.apk; adb shell pm list packages | grep gapja60; adb logcat -c; adb shell am start -n kr.gapja60.app/kr.gapja60.MainActivity; sleep 8; adb exec-out screencap -p > shots/1-start.png; sleep 100; adb exec-out screencap -p > shots/2-after.png; adb shell input keyevent 82; adb shell uiautomator dump /sdcard/ui.xml; adb pull /sdcard/ui.xml shots/ui.xml; adb logcat -d > shots/logcat.txt; grep -E "FATAL EXCEPTION" -A20 shots/logcat.txt > shots/crash.txt || true; adb shell pidof kr.gapja60.app > shots/pid.txt || true; true'
+          script: bash .github/smoke.sh
       - name: 결과 판정
         run: |
-          ls -la shots
-          if [ -s shots/crash.txt ]; then head -30 shots/crash.txt | while IFS= read -r l; do echo "::error::$l"; done; fi
-          grep -E "gapja|TextToSpeech|tts" shots/logcat.txt | tail -30 | while IFS= read -r l; do echo "::notice::$l"; done
-          echo "::notice::pid=$(cat shots/pid.txt)"
+          cat shots/report.txt | while IFS= read -r l; do echo "::notice::$l"; done
+          head -30 shots/crash.txt | while IFS= read -r l; do echo "::warning::$l"; done
+          grep -E " E AndroidRuntime| E kr.gapja60| E ExoPlayer" shots/logcat.txt | tail -15 | while IFS= read -r l; do echo "::warning::$l"; done
       - name: 점검 결과 올리기
         uses: softprops/action-gh-release@v2
         with:
@@ -43,5 +43,5 @@ jobs:
           make_latest: false
           files: |
             shots/*.png
-            shots/ui.xml
+            shots/report.txt
             shots/crash.txt
