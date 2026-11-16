@@ -25,7 +25,7 @@ class SoftVoiceTest {
     }
 
     @Test fun keepsSpeechBandSoftensHighs() {
-        val st = SoftVoice.STYLES[1]
+        val st = SoftVoice.STYLES[2]
         // 같은 크기의 1kHz(말소리 핵심 대역)와 7kHz(쇳소리) → 처리 후 7kHz가 훨씬 작아야 한다
         val mid = SoftVoice.process(tone(1000.0, 400), rate, st)
         val high = SoftVoice.process(tone(7000.0, 400), rate, st)
@@ -39,6 +39,6 @@ class SoftVoiceTest {
             for (i in 1 until x.size) { d += abs(x[i] - x[i - 1].toDouble()); e += abs(x[i].toDouble()) }
             return d / e
         }
-        assertTrue("고음이 줄어야 함", hfRatio(out.copyOf(mix.size)) < hfRatio(mix) * 0.8)
+        assertTrue("고음이 줄어야 함", hfRatio(out.copyOf(mix.size)) < hfRatio(mix) * 0.85)
     }
 }

@@ -40,13 +40,13 @@ data class VoicePack(
 
 object VoicePacks {
     val ALL = listOf(
-        // 중저음: 음높이를 낮추되(여성 0.88~0.9, 남성 0.8~0.85) 기계음이 되지 않을 선에서 멈추고,
-        // 나머지 두께는 음색 처리(250Hz 저음 보강)로 더한다
-        VoicePack("f_calm", "여성 · 차분", "중저음, 부드럽고 천천히", listOf("kob", "ism"), 0.88f, 0.82f),
-        VoicePack("f_clear", "여성 · 또렷", "중저음, 또박또박 차분하게", listOf("ism", "kob"), 0.9f, 0.9f),
-        VoicePack("m_low", "남성 · 저음", "낮고 천천히", listOf("kod", "koc"), 0.8f, 0.82f),
-        VoicePack("m_clear", "남성 · 또렷", "중저음, 또박또박 차분하게", listOf("koc", "kod"), 0.85f, 0.9f),
-        VoicePack("default", "기기 기본", "이 폰의 기본 한국어 음성, 중저음", emptyList(), 0.88f, 0.86f),
+        // 맑은 중저음: 음높이를 많이 내리면 소리가 탁해지므로 살짝만 낮추고(여성 0.9~0.93, 남성 0.84~0.88),
+        // 탁함은 음색 처리(300Hz 감쇠, 3kHz 또렷함 보강)로 걷어낸다
+        VoicePack("f_calm", "여성 · 차분", "맑은 중저음, 부드럽고 천천히", listOf("kob", "ism"), 0.9f, 0.82f),
+        VoicePack("f_clear", "여성 · 또렷", "맑은 중저음, 또박또박", listOf("ism", "kob"), 0.93f, 0.9f),
+        VoicePack("m_low", "남성 · 저음", "맑은 저음, 천천히", listOf("kod", "koc"), 0.84f, 0.82f),
+        VoicePack("m_clear", "남성 · 또렷", "맑은 중저음, 또박또박", listOf("koc", "kod"), 0.88f, 0.9f),
+        VoicePack("default", "기기 기본", "이 폰의 기본 한국어 음성, 맑은 중저음", emptyList(), 0.9f, 0.86f),
     )
     fun byId(id: String) = ALL.firstOrNull { it.id == id } ?: ALL.last()
 }
@@ -59,7 +59,7 @@ object VoicePacks {
 class VoiceBank(private val ctx: Context) {
     companion object {
         const val TAG = "Gapja60"
-        const val VOICE_VERSION = 4
+        const val VOICE_VERSION = 5
     }
 
     val root = File(ctx.filesDir, "voice").apply { mkdirs() }

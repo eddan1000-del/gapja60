@@ -13,8 +13,10 @@ import kotlin.math.sqrt
 /**
  * 합성 음성을 듣기 편하게 다듬는 음색 처리(안드로이드 의존성 없음 → 단위 테스트 가능).
  *
- * 1) 귀를 찌르는 고음(치찰음·금속성) 줄이기: 고음 셸프 감쇠 + 저역 통과
- * 2) 중저음: 250Hz 부근 저음 셸프 보강(목소리를 낮고 두툼하게)
+ * 1) 맑게: 80~90Hz 이하 웅웅거림 제거(고역 통과), 300Hz 부근 '탁한' 대역 살짝 감쇠,
+ *    2.8~3kHz '또렷함' 대역 살짝 보강
+ * 2) 귀를 찌르는 쇳소리(치찰음)만 고음 셸프·저역 통과로 완화
+ * 3) 중저음의 바탕: 180Hz 부근 아주 소폭 보강
  * 3) 말머리가 '툭' 튀지 않게: 부드러운 압축(큰 소리만 살짝 눌러 고르게)
  * 4) 잔향(울림)은 쓰지 않음 — 2차 피드백 반영. 필요 시 reverbMix로만 켤 수 있음
  * 5) 시작·끝 페이드
@@ -22,9 +24,12 @@ import kotlin.math.sqrt
  */
 object SoftVoice {
     data class Style(
-        val lowpassHz: Double,
-        val highShelfHz: Double, val highShelfDb: Double,
+        val highpassHz: Double,
         val lowShelfHz: Double, val lowShelfDb: Double,
+        val mudHz: Double, val mudDb: Double,
+        val presenceHz: Double, val presenceDb: Double,
+        val highShelfHz: Double, val highShelfDb: Double,
+        val lowpassHz: Double,
         val compRatio: Double,
         val reverbMix: Double,
         val fadeInMs: Int, val fadeOutMs: Int,
@@ -33,9 +38,10 @@ object SoftVoice {
 
     /** 0 자연 · 1 부드럽게(기본) · 2 더 부드럽게 */
     val STYLES = listOf(
-        Style(9000.0, 3500.0, -1.5, 250.0, 1.5, 1.5, 0.0, 15, 40, 3600.0),
-        Style(6500.0, 3000.0, -4.0, 250.0, 3.0, 2.5, 0.0, 25, 70, 3000.0),
-        Style(5000.0, 2500.0, -6.0, 250.0, 4.0, 3.0, 0.0, 35, 100, 2600.0),
+        //    고역통과 저음보강      탁함감쇠      또렷함        쇳소리감쇠     저역통과  압축 잔향 페이드  음량
+        Style(90.0, 180.0, 0.0, 320.0, -1.5, 3000.0, 1.5, 6000.0, -1.0, 10000.0, 1.5, 0.0, 12, 40, 3600.0),
+        Style(90.0, 180.0, 1.0, 320.0, -2.5, 2800.0, 1.0, 5000.0, -2.5, 8500.0, 2.0, 0.0, 18, 60, 3200.0),
+        Style(90.0, 180.0, 1.5, 320.0, -2.5, 2800.0, 0.5, 4500.0, -4.0, 7500.0, 2.5, 0.0, 25, 80, 3000.0),
     )
     val NAMES = listOf("자연", "부드럽게", "더 부드럽게")
 
@@ -49,7 +55,10 @@ object SoftVoice {
 
         // 1)·2) 음색(EQ)
         val nyq = rate / 2.0
-        biquad(x, lowShelf(style.lowShelfHz, style.lowShelfDb, rate))
+        biquad(x, highpass(style.highpassHz, 0.707, rate))
+        if (style.lowShelfDb != 0.0) biquad(x, lowShelf(style.lowShelfHz, style.lowShelfDb, rate))
+        biquad(x, peaking(style.mudHz, style.mudDb, 1.0, rate))
+        biquad(x, peaking(min(style.presenceHz, nyq * 0.7), style.presenceDb, 1.0, rate))
         biquad(x, highShelf(min(style.highShelfHz, nyq * 0.8), style.highShelfDb, rate))
         biquad(x, lowpass(min(style.lowpassHz, nyq * 0.9), 0.707, rate))
 
@@ -85,6 +94,16 @@ object SoftVoice {
     private fun lowpass(f: Double, q: Double, fs: Int): Coef {
         val w = 2 * PI * f / fs; val c = cos(w); val al = sin(w) / (2 * q)
         return norm((1 - c) / 2, 1 - c, (1 - c) / 2, 1 + al, -2 * c, 1 - al)
+    }
+
+    private fun highpass(f: Double, q: Double, fs: Int): Coef {
+        val w = 2 * PI * f / fs; val c = cos(w); val al = sin(w) / (2 * q)
+        return norm((1 + c) / 2, -(1 + c), (1 + c) / 2, 1 + al, -2 * c, 1 - al)
+    }
+
+    private fun peaking(f: Double, db: Double, q: Double, fs: Int): Coef {
+        val a = 10.0.pow(db / 40); val w = 2 * PI * f / fs; val c = cos(w); val al = sin(w) / (2 * q)
+        return norm(1 + al * a, -2 * c, 1 - al * a, 1 + al / a, -2 * c, 1 - al / a)
     }
 
     private fun highShelf(f: Double, db: Double, fs: Int): Coef {
