@@ -101,6 +101,13 @@ class Playlist(private val vb: VoiceBank, private val prefs: Prefs, private val 
         return out
     }
 
+    fun preview(p: VoicePack): List<MediaItem> = (0..3).flatMap { idx ->
+        listOf(
+            item(vb.voice(p, idx), Gapja.hangul(idx), Direction.FORWARD, ex("g", idx, idx + 1, 4)),
+            item(vb.silence, Gapja.hangul(idx), Direction.FORWARD, ex("s", idx, idx + 1, 4), prefs.gapMs.toLong().coerceAtLeast(300)),
+        )
+    }
+
     fun reveal(dir: Direction, answer: Int, ok: Boolean): List<MediaItem> = listOf(
         item(if (ok) vb.ok else vb.ng, if (ok) "정답" else "오답", dir, ex("t", answer)),
         voice(dir, answer, 0, 0),

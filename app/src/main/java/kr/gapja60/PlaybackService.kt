@@ -25,10 +25,14 @@ import com.google.common.util.concurrent.ListenableFuture
 class PlaybackService : MediaSessionService() {
     companion object {
         const val CMD_SLEEP = "kr.gapja60.SLEEP"
+        const val CMD_BG = "kr.gapja60.BG"
     }
 
     private var session: MediaSession? = null
     private lateinit var player: ExoPlayer
+    /** 배경 소리(브라운 노이즈) 전용 플레이어. 음성 재생을 따라 함께 재생·멈춤 */
+    private var bg: ExoPlayer? = null
+    private var bgLevel = 0f
     private val handler = Handler(Looper.getMainLooper())
     // 잠들기 타이머: 끝나기 fade분 전부터 음량을 서서히 줄인 뒤 멈춤
     private var fadeEnd = 0L
@@ -36,8 +40,10 @@ class PlaybackService : MediaSessionService() {
     private val fadeStep = object : Runnable {
         override fun run() {
             val left = fadeEnd - SystemClock.elapsedRealtime()
-            if (left <= 0) { player.pause(); player.volume = 1f; return }
-            player.volume = (left.toFloat() / fadeMs).coerceIn(0f, 1f).let { it * it }   // 귀에 자연스럽게 줄어들도록 제곱 곡선
+            if (left <= 0) { player.pause(); player.volume = 1f; bg?.volume = bgLevel; return }
+            val f = (left.toFloat() / fadeMs).coerceIn(0f, 1f).let { it * it }   // 귀에 자연스럽게 줄어들도록 제곱 곡선
+            player.volume = f
+            bg?.volume = bgLevel * f
             handler.postDelayed(this, 500)
         }
     }
@@ -61,6 +67,7 @@ class PlaybackService : MediaSessionService() {
                 val now = SystemClock.elapsedRealtime()
                 if (isPlaying) playStart = now
                 else if (playStart > 0) { prefs.addStudy(now - playStart); playStart = 0 }
+                syncBg()
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -95,6 +102,10 @@ class PlaybackService : MediaSessionService() {
             customCommand: SessionCommand,
             args: Bundle,
         ): ListenableFuture<SessionResult> {
+            if (customCommand.customAction == CMD_BG) {
+                setBg(args.getFloat("level", 0f))
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
             if (customCommand.customAction == CMD_SLEEP) {
                 handler.removeCallbacks(sleepRunnable); handler.removeCallbacks(fadeStep)
                 player.volume = 1f
@@ -119,6 +130,28 @@ class PlaybackService : MediaSessionService() {
             Futures.immediateFuture(mediaItems.map { Playlist.resolve(it) }.toMutableList())
     }
 
+    private fun setBg(level: Float) {
+        bgLevel = level.coerceIn(0f, 1f)
+        if (bgLevel > 0f && bg == null) {
+            val f = VoiceBank(this).noise
+            if (!f.exists()) return
+            bg = ExoPlayer.Builder(this)
+                .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)
+                .build().apply {
+                    setMediaItem(MediaItem.fromUri(android.net.Uri.fromFile(f)))
+                    repeatMode = Player.REPEAT_MODE_ALL
+                    prepare()
+                }
+        }
+        bg?.volume = bgLevel
+        syncBg()
+    }
+
+    private fun syncBg() {
+        val b = bg ?: return
+        if (bgLevel > 0f && player.isPlaying) b.play() else b.pause()
+    }
+
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -128,6 +161,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         handler.removeCallbacks(sleepRunnable); handler.removeCallbacks(fadeStep)
+        bg?.release(); bg = null
         session?.run { player.release(); release() }
         session = null
         super.onDestroy()

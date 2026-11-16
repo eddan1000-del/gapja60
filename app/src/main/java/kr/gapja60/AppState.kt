@@ -19,7 +19,7 @@ enum class Mode(val label: String) { RECITE("암송"), BLANK("빈칸"), NEXT("�
 /** 화면 상태와 재생 제어. */
 class AppState(ctx: Context) {
     val prefs = Prefs(ctx).apply { migrateV2() }
-    val voices = VoiceBank(ctx).apply { cleanupLegacy() }
+    val voices = VoiceBank(ctx).apply { cleanupLegacy(); upgradeIfNeeded(prefs) }
     var pack by mutableStateOf(VoicePacks.byId(prefs.voicePack))
         private set
     private val playlist = Playlist(voices, prefs) { pack }
@@ -86,6 +86,7 @@ class AppState(ctx: Context) {
         controller = c
         c.addListener(listener)
         c.setPlaybackSpeed(speed)
+        sendBg()
         sync(c)
     }
 
@@ -221,6 +222,33 @@ class AppState(ctx: Context) {
         sleeping = false
         speed = speedBeforeSleep
         controller?.setPlaybackSpeed(speed)
+    }
+
+    // ---- 음색·배경 소리 ----
+    var softness by mutableIntStateOf(prefs.softness)
+    var bgLevel by mutableIntStateOf(prefs.bgLevel)
+
+    /** 음색을 바꾸면 지금 목소리를 새 음색으로 다시 만든다 */
+    fun changeSoftness(v: Int) {
+        if (v == softness) return
+        softness = v; prefs.softness = v
+        stop(); voices.clear(pack); voiceReady = false
+    }
+
+    fun changeBg(v: Int) { bgLevel = v; prefs.bgLevel = v; sendBg() }
+
+    private fun sendBg() {
+        controller?.sendCustomCommand(
+            SessionCommand(PlaybackService.CMD_BG, Bundle.EMPTY),
+            Bundle().apply { putFloat("level", listOf(0f, 0.12f, 0.25f)[bgLevel.coerceIn(0, 2)]) },
+        )
+    }
+
+    /** 미리 듣기: 이미 만들어 둔 목소리는 실제 파일(음색 처리 포함)로 들려준다 */
+    fun previewFiles(p: VoicePack): Boolean {
+        if (!voices.isReady(p)) return false
+        load(playlist.preview(p), loop = false)
+        return true
     }
 
     // ---- 음성 버전 ----

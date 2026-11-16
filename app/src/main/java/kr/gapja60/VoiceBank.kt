@@ -23,7 +23,6 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.sin
-import kotlin.math.sqrt
 
 /**
  * 음성 버전. voiceKeys는 구글 한국어 음성 이름(ko-kr-x-<key>-local/network)의 후보이며 앞의 것이 우선이다.
@@ -41,11 +40,12 @@ data class VoicePack(
 
 object VoicePacks {
     val ALL = listOf(
-        VoicePack("f_calm", "여성 · 차분", "낮고 부드럽게, 천천히", listOf("kob", "ism"), 0.86f, 0.88f),
-        VoicePack("f_clear", "여성 · 또렷", "또박또박 낭송하듯", listOf("ism", "kob"), 0.93f, 0.95f),
-        VoicePack("m_low", "남성 · 저음", "낮고 안정되게, 천천히", listOf("kod", "koc"), 0.84f, 0.88f),
-        VoicePack("m_clear", "남성 · 또렷", "또박또박 낭송하듯", listOf("koc", "kod"), 0.93f, 0.95f),
-        VoicePack("default", "기기 기본", "이 폰의 기본 한국어 음성", emptyList(), 0.92f, 0.95f),
+        // 음높이를 지나치게 낮추면 오히려 기계음처럼 들리므로 0.9~0.97 범위에서 살짝만 낮춘다
+        VoicePack("f_calm", "여성 · 차분", "부드럽고 천천히", listOf("kob", "ism"), 0.95f, 0.82f),
+        VoicePack("f_clear", "여성 · 또렷", "또박또박, 차분하게", listOf("ism", "kob"), 0.97f, 0.9f),
+        VoicePack("m_low", "남성 · 저음", "낮고 천천히", listOf("kod", "koc"), 0.9f, 0.82f),
+        VoicePack("m_clear", "남성 · 또렷", "또박또박, 차분하게", listOf("koc", "kod"), 0.95f, 0.9f),
+        VoicePack("default", "기기 기본", "이 폰의 기본 한국어 음성", emptyList(), 0.96f, 0.86f),
     )
     fun byId(id: String) = ALL.firstOrNull { it.id == id } ?: ALL.last()
 }
@@ -56,7 +56,10 @@ object VoicePacks {
  * - 없으면 기기의 한국어 음성 합성으로 한 번만 만들고, 음량을 고르게 맞추고 앞뒤 무음 길이를 통일한다
  */
 class VoiceBank(private val ctx: Context) {
-    companion object { const val TAG = "Gapja60" }
+    companion object {
+        const val TAG = "Gapja60"
+        const val VOICE_VERSION = 3
+    }
 
     val root = File(ctx.filesDir, "voice").apply { mkdirs() }
     private fun packDir(p: VoicePack) = File(root, p.id).apply { mkdirs() }
@@ -67,10 +70,19 @@ class VoiceBank(private val ctx: Context) {
     val ng get() = File(root, "ng.wav")
     val tick get() = File(root, "tick.wav")
     val silence get() = File(root, "silence.wav")
+    val noise get() = File(root, "bg_brown.wav")
+
+
+    /** 음성 처리 방식이 바뀌면(버전 올림) 만들어 둔 음성을 모두 지워 다시 만들게 한다 */
+    fun upgradeIfNeeded(prefs: Prefs) {
+        if (prefs.voiceVersion >= VOICE_VERSION) return
+        VoicePacks.ALL.forEach { clear(it) }
+        prefs.voiceVersion = VOICE_VERSION
+    }
 
     fun isReady(p: VoicePack): Boolean =
         (0..59).all { voice(p, it).length() > 500 } && next(p).length() > 500 &&
-            silence.exists() && ok.exists() && ng.exists() && tick.exists()
+            silence.exists() && ok.exists() && ng.exists() && tick.exists() && noise.exists()
 
     /** 1차 버전의 옛 파일(뒤집기 음성 등) 정리 */
     fun cleanupLegacy() {
@@ -116,6 +128,7 @@ class VoiceBank(private val ctx: Context) {
         tts.setLanguage(Locale.KOREAN)
         chooseVoice(tts, p)?.let { runCatching { tts.voice = it } }
         tts.setPitch(p.pitch); tts.setSpeechRate(p.rate)
+        // 미리 듣기는 실제 파일(음색 처리 포함)로 들려주는 것이 정확하므로, 파일이 있으면 그걸 우선 사용
         tts.speak("갑자. 을축. 병인. 정묘.", TextToSpeech.QUEUE_FLUSH, null, "preview")
     }
 
@@ -149,7 +162,8 @@ class VoiceBank(private val ctx: Context) {
             })
 
             val jobs = ArrayList<Pair<String, File>>()
-            for (i in 0..59) jobs += Gapja.hangul(i) to voice(p, i)
+            // 마침표를 붙여 끝이 내려가는 차분한 평서 억양으로 읽게 한다
+            for (i in 0..59) jobs += (Gapja.hangul(i) + ".") to voice(p, i)
             jobs += "다음은?" to next(p)
 
             suspend fun synth(text: String, file: File): Int {
@@ -159,8 +173,9 @@ class VoiceBank(private val ctx: Context) {
                 val r = tts.synthesizeToFile(text, Bundle(), tmp, file.name)
                 val code = if (r != TextToSpeech.SUCCESS) -100 + r else (withTimeoutOrNull(20_000) { d.await() } ?: -200)
                 if (code != 0 || tmp.length() < 500) { tmp.delete(); return if (code == 0) -300 else code }
-                withContext(Dispatchers.IO) {
-                    if (!polish(tmp, file)) tmp.renameTo(file) else tmp.delete()
+                val style = SoftVoice.STYLES[Prefs(ctx).softness.coerceIn(0, 2)]
+                withContext(Dispatchers.Default) {
+                    if (!polish(tmp, file, style)) tmp.renameTo(file) else tmp.delete()
                 }
                 return 0
             }
@@ -222,15 +237,12 @@ class VoiceBank(private val ctx: Context) {
         true
     }
 
-    // ───────── 음량 맞춤·무음 정리 ─────────
+    // ───────── 다듬기: 무음 정리 + 음색 처리 ─────────
     /**
-     * 합성된 wav(16비트 PCM)를 읽어
-     * 1) 앞뒤 무음을 잘라 앞 60ms·뒤 90ms로 통일
-     * 2) 말소리 구간의 평균 음량(RMS)을 같은 수준으로 맞추되 최대값은 넘지 않게
-     * 3) 5ms 페이드로 잡음 방지
-     * 실패하면 false(원본 그대로 사용).
+     * 합성된 wav(16비트 PCM)를 읽어 앞뒤 무음을 잘라내고(앞 60ms로 통일),
+     * SoftVoice로 고음 완화·압축·잔향·페이드·음량 맞춤을 한다. 실패하면 false(원본 그대로 사용).
      */
-    private fun polish(src: File, dst: File): Boolean = runCatching {
+    private fun polish(src: File, dst: File, style: SoftVoice.Style): Boolean = runCatching {
         val bytes = src.readBytes()
         val bb = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
         if (bytes.size < 44 || String(bytes, 0, 4) != "RIFF" || String(bytes, 8, 4) != "WAVE") return false
@@ -247,26 +259,15 @@ class VoiceBank(private val ctx: Context) {
         val pcm = ShortArray(frames) { bb.getShort(dataOff + it * 2 * channels) }
         val peak = pcm.maxOfOrNull { abs(it.toInt()) } ?: 0
         if (peak < 200) return false
-        val th = peak * 0.04
+        val th = peak * 0.03
         var a = pcm.indexOfFirst { abs(it.toInt()) > th }
         var b = pcm.indexOfLast { abs(it.toInt()) > th }
         if (a < 0 || b <= a) return false
-        val margin = rate * 25 / 1000
-        a = (a - margin).coerceAtLeast(0); b = (b + margin).coerceAtMost(frames - 1)
-        val voiced = pcm.copyOfRange(a, b + 1)
-        var sum = 0.0; var n = 0
-        for (s in voiced) if (abs(s.toInt()) > th) { sum += s.toDouble() * s; n++ }
-        val rms = if (n > 0) sqrt(sum / n) else 1.0
-        val gain = min(4200.0 / rms, 27000.0 / peak)
-        val lead = rate * 60 / 1000; val tail = rate * 90 / 1000
-        val out = ShortArray(lead + voiced.size + tail)
-        val fade = rate * 5 / 1000
-        for (i in voiced.indices) {
-            var g = gain
-            if (i < fade) g *= i.toDouble() / fade
-            if (i > voiced.size - fade) g *= (voiced.size - i).toDouble() / fade
-            out[lead + i] = (voiced[i] * g).toInt().coerceIn(-32767, 32767).toShort()
-        }
+        a = (a - rate * 30 / 1000).coerceAtLeast(0); b = (b + rate * 40 / 1000).coerceAtMost(frames - 1)
+        val soft = SoftVoice.process(pcm.copyOfRange(a, b + 1), rate, style)
+        val lead = rate * 60 / 1000
+        val out = ShortArray(lead + soft.size)
+        System.arraycopy(soft, 0, out, lead, soft.size)
         writeWav(dst, out, rate)
         true
     }.getOrElse { Log.w(TAG, "polish failed", it); false }
@@ -278,6 +279,26 @@ class VoiceBank(private val ctx: Context) {
         if (!ok.exists()) writeWav(ok, tones(rate, listOf(523.3 to 110, 659.3 to 160)), rate)
         if (!ng.exists()) writeWav(ng, tones(rate, listOf(293.7 to 140, 246.9 to 200)), rate)
         if (!tick.exists()) writeWav(tick, tones(rate, listOf(880.0 to 40)), rate)
+        if (!noise.exists()) writeWav(noise, brownNoise(rate, 20), rate)
+    }
+
+    /** 낮게 웅웅거리는 브라운 노이즈(빗소리·바람 소리에 가까움). 끝과 처음을 겹쳐 이음매 없이 반복되게 한다. */
+    private fun brownNoise(rate: Int, seconds: Int): ShortArray {
+        val n = rate * seconds; val xf = rate * 2
+        val rnd = java.util.Random(60)
+        val raw = DoubleArray(n + xf)
+        var v = 0.0; var lp = 0.0
+        for (i in raw.indices) {
+            v = (v + (rnd.nextDouble() * 2 - 1) * 0.02) * 0.998
+            lp += (v - lp) * 0.25
+            raw[i] = lp
+        }
+        // 직류 성분 제거
+        val mean = raw.average(); for (i in raw.indices) raw[i] -= mean
+        // 끝 2초를 처음 2초에 겹쳐 이음매 제거
+        for (i in 0 until xf) { val t = i.toDouble() / xf; raw[i] = raw[i] * t + raw[n + i] * (1 - t) }
+        val pk = (0 until n).maxOf { abs(raw[it]) }.coerceAtLeast(1e-9)
+        return ShortArray(n) { (raw[it] / pk * 9000).toInt().toShort() }
     }
 
     private fun tones(rate: Int, notes: List<Pair<Double, Int>>): ShortArray {

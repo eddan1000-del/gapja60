@@ -567,11 +567,21 @@ private fun Settings(s: AppState) {
                     Text(p.label, fontWeight = FontWeight.Bold, color = if (sel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                     Text(p.desc + if (s.voices.isReady(p)) "" else " · 선택하면 1~2분 준비", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                TextButton(onClick = { scope.launch { s.voices.preview(p) } }) { Text("미리 듣기") }
+                TextButton(onClick = { if (!s.previewFiles(p)) scope.launch { s.voices.preview(p) } }) { Text("미리 듣기") }
             }
         }
-        Text("이 폰에 없는 목소리는 목록에 나오지 않습니다. 모든 목소리는 높은 톤을 피하도록 음높이를 낮춰 만듭니다.",
+        Text("이 폰에 없는 목소리는 목록에 나오지 않습니다. 아직 만들지 않은 목소리의 미리 듣기는 음색 처리 전 소리입니다.",
             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+
+        Label("음색")
+        Chips(kr.gapja60.SoftVoice.NAMES.mapIndexed { i, n -> i to n }, { s.softness == it }) {
+            if (it != s.softness) { s.voices.releasePreview(); s.changeSoftness(it); s.showSettings = false }
+        }
+        Text("'부드럽게'는 귀를 찌르는 높은 소리를 줄이고 말머리를 둥글게 다듬어, 공간감을 살짝 더합니다. 발음에 중요한 소리는 그대로 둡니다. 바꾸면 지금 목소리를 새로 만듭니다(1~2분).",
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        Label("배경 소리 (낮은 바람·빗소리 같은 잡음)")
+        Chips(listOf(0 to "없음", 1 to "작게", 2 to "보통"), { s.bgLevel == it }) { s.changeBg(it) }
 
         Label("표기")
         Chips(Script.entries.map { it to it.label }, { s.script == it }) { s.script = it; s.prefs.script = it.ordinal }
