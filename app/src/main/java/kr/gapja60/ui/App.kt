@@ -112,7 +112,7 @@ private fun VoiceSetup(s: AppState) {
         error = null
         s.voices.status = { status = it }
         val r = s.voices.build(s.pack) { n, total -> progress = n.toFloat() / total }
-        if (r is VoiceBank.Result.Ok) s.voiceReady = true else error = r
+        if (r is VoiceBank.Result.Ok) { s.voiceReady = true; s.ensureVariants() } else error = r
     }
 
     Column(
@@ -450,6 +450,8 @@ private fun PlayerBar(s: AppState) {
     val haptic = LocalHapticFeedback.current
     Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 12.dp, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp)) {
+            if (s.variantStatus.isNotBlank()) Text(s.variantStatus + " (끝나면 빠르게·느리게 들을 때 더 또렷해집니다)",
+                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val hidden = s.curIdx < 0 || s.curKind == "b" || s.curKind == "p"
                 AnimatedContent(targetState = if (hidden) -1 else s.curIdx, transitionSpec = { fadeIn(tween(90)) togetherWith fadeOut(tween(90)) }, label = "now", modifier = Modifier.weight(1f)) { idx ->
