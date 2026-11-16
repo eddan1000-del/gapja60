@@ -68,10 +68,4 @@ adb shell pidof $PKG >> shots/report.txt || echo "PROCESS DEAD" >> shots/report.
 
 
 
-# ── 목소리 비교 실험(디버그 APK) ──
-adb uninstall $PKG
-adb install -r exp.apk
-adb shell am start -n $PKG/kr.gapja60.ExperimentActivity
-for i in $(seq 1 150); do adb shell run-as $PKG ls files/exp/done.txt >/dev/null 2>&1 && break; sleep 5; done
-adb exec-out run-as $PKG tar -C files -cf - exp > shots/exp.tar
 true
