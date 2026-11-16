@@ -8,7 +8,16 @@ import java.io.File
 import kotlin.math.roundToInt
 
 /** 재생 목록 만들기. 모든 항목은 기기 안의 wav 파일이다. */
-class Playlist(private val vb: VoiceBank, private val prefs: Prefs, private val pack: () -> VoicePack) {
+class Playlist(
+    private val vb: VoiceBank,
+    private val prefs: Prefs,
+    private val pack: () -> VoicePack,
+    private val variant: () -> VoiceBank.Variant = { VoiceBank.Variant.NORMAL },
+    /** 실제 재생 배속(간지 사이 최소 간격 계산용) */
+    private val playback: () -> Float = { 1f },
+) {
+    /** 아무리 빨라도 간지 사이에 이만큼(ms)은 실제로 쉬게 해 발음이 붙지 않게 한다 */
+    private val minRealGapMs = 90
     companion object {
         const val K_KIND = "kind"    // g=간지 낭독, s=간격, b=빈칸(생각 시간), p=다음은?, t=효과음
         const val K_IDX = "idx"
@@ -56,10 +65,10 @@ class Playlist(private val vb: VoiceBank, private val prefs: Prefs, private val 
     }
 
     private fun voice(dir: Direction, idx: Int, pos: Int, total: Int) =
-        item(vb.voice(pack(), idx), Gapja.hangul(idx), dir, ex("g", idx, pos, total))
+        item(vb.voice(pack(), idx, variant()), Gapja.hangul(idx), dir, ex("g", idx, pos, total))
 
     private fun gap(dir: Direction, idx: Int, pos: Int, total: Int, ms: Int, last: Boolean = false, kind: String = "s") =
-        item(vb.silence, Gapja.hangul(idx), dir, ex(kind, idx, pos, total, last), ms.coerceIn(30, 5900).toLong())
+        item(vb.silence, Gapja.hangul(idx), dir, ex(kind, idx, pos, total, last), maxOf(ms, (minRealGapMs * playback()).toInt()).coerceIn(30, 5900).toLong())
 
     /** A. 연속 암송 */
     fun recite(dir: Direction, seq: List<Int>, passes: Int, gapMs: Int = prefs.gapMs): List<MediaItem> {
