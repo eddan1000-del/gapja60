@@ -70,7 +70,7 @@ adb shell pidof $PKG >> shots/report.txt || echo "PROCESS DEAD" >> shots/report.
 adb uninstall $PKG
 adb install -r exp.apk
 adb shell am start -n $PKG/kr.gapja60.ExperimentActivity
-for i in $(seq 1 90); do adb shell run-as $PKG ls files/exp/done.txt >/dev/null 2>&1 && break; sleep 5; done
+for i in $(seq 1 180); do adb shell run-as $PKG ls files/exp/done.txt >/dev/null 2>&1 && break; sleep 5; done
 adb shell run-as $PKG cat files/exp/done.txt >> shots/report.txt
 adb exec-out run-as $PKG tar -C files -cf - exp > shots/exp.tar
 ls -la shots/exp.tar

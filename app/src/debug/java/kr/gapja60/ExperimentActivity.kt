@@ -57,6 +57,25 @@ class ExperimentActivity : Activity() {
                 }
             }
         }
+        // 최종 앱 처리 결과 비교: 새 설정 vs 이전 설정, 보통·빠른 음성
+        val vb = VoiceBank(this)
+        val prefs = Prefs(this)
+        for ((prof, tag) in listOf(1 to "old", 0 to "new")) {
+            prefs.voiceProfile = prof
+            for (id in listOf("f_calm", "m_low")) {
+                val p = VoicePacks.byId(id)
+                vb.clear(p)
+                for (v in if (prof == 0) listOf(VoiceBank.Variant.NORMAL, VoiceBank.Variant.FAST) else listOf(VoiceBank.Variant.NORMAL)) {
+                    val r = kotlinx.coroutines.runBlocking { vb.build(p, v) { _, _ -> } }
+                    for (w in listOf(0, 4, 56, 57, 59)) {   // 갑자 무진 경신 신유 계해
+                        vb.voice(p, w, v).takeIf { it.exists() }?.copyTo(File(out, "final_${tag}_${id}_${v}_${Gapja.hangul(w)}.wav"), true)
+                    }
+                    Log.i("Gapja60", "final $tag $id $v $r")
+                    runOnUiThread { tv.text = "최종 $tag $id $v" }
+                }
+            }
+        }
+        prefs.voiceProfile = 0
         File(out, "done.txt").writeText("files=$n voices=${voices.map { it.name }}")
         Log.i("Gapja60", "experiment done $n")
         runOnUiThread { tv.text = "끝 $n" }
