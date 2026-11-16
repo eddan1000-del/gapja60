@@ -41,6 +41,8 @@ data class VoicePack(
     val pitch: Float,
     val rate: Float,
     val pitchPrev: Float = pitch,
+    /** 빠른 음성에 네트워크 음성을 쓸지. 남성은 기기 안 음성의 고속 합성 떨림이 커서 네트워크, 여성은 음색 일관성을 위해 기기 안 음성 */
+    val fastNetwork: Boolean = false,
 )
 
 object VoicePacks {
@@ -49,8 +51,8 @@ object VoicePacks {
         // 탁함은 음색 처리(300Hz 감쇠, 3kHz 또렷함 보강)로 걷어낸다
         VoicePack("f_calm", "여성 · 차분", "맑은 중저음, 부드럽고 천천히", listOf("kob", "ism"), 0.94f, 0.82f, pitchPrev = 0.9f),
         VoicePack("f_clear", "여성 · 또렷", "중저음, 또박또박", listOf("ism", "kob"), 0.89f, 0.9f),
-        VoicePack("m_low", "남성 · 저음", "맑은 저음, 천천히", listOf("kod", "koc"), 0.92f, 0.82f, pitchPrev = 0.84f),
-        VoicePack("m_clear", "남성 · 또렷", "중저음, 또박또박", listOf("koc", "kod"), 0.85f, 0.9f),
+        VoicePack("m_low", "남성 · 저음", "맑은 저음, 천천히", listOf("kod", "koc"), 0.92f, 0.82f, pitchPrev = 0.84f, fastNetwork = true),
+        VoicePack("m_clear", "남성 · 또렷", "중저음, 또박또박", listOf("koc", "kod"), 0.85f, 0.9f, fastNetwork = true),
         VoicePack("default", "기기 기본", "이 폰의 기본 한국어 음성, 맑은 중저음", emptyList(), 0.92f, 0.86f, pitchPrev = 0.9f),
     )
     fun byId(id: String) = ALL.firstOrNull { it.id == id } ?: ALL.last()
@@ -64,7 +66,7 @@ object VoicePacks {
 class VoiceBank(private val ctx: Context) {
     companion object {
         const val TAG = "Gapja60"
-        const val VOICE_VERSION = 9
+        const val VOICE_VERSION = 10
         /** 빠른 속도용 음성의 합성 속도 */
         const val FAST_RATE = 2.0f
         /** 느린 속도용 음성의 합성 속도 배율 */
@@ -87,8 +89,30 @@ class VoiceBank(private val ctx: Context) {
     /** 이 변형의 '말 속도' 배율(보통 음성 대비) */
     fun speechFactor(p: VoicePack, v: Variant): Float = when (v) {
         Variant.NORMAL -> 1f
-        Variant.SLOW -> SLOW_FACTOR
-        Variant.FAST -> FAST_RATE / p.rate
+        // 만든 뒤 실제 길이로 잰 배율이 있으면 그것을 쓴다(합성 속도 값과 실제 말 속도는 정확히 비례하지 않음)
+        else -> Prefs(ctx).speechFactor(p.id, v.name) ?: if (v == Variant.SLOW) SLOW_FACTOR else FAST_RATE / p.rate
+    }
+
+    private fun wavSeconds(f: File): Double = runCatching {
+        RandomAccessFile(f, "r").use { r ->
+            val b = ByteArray(minOf(r.length(), 4096L).toInt()); r.readFully(b)
+            val bb = ByteBuffer.wrap(b).order(ByteOrder.LITTLE_ENDIAN)
+            var pos = 12; var rate = 0; var ch = 1
+            while (pos + 8 <= b.size) {
+                val id = String(b, pos, 4); val len = bb.getInt(pos + 4)
+                if (id == "fmt ") { ch = bb.getShort(pos + 10).toInt(); rate = bb.getInt(pos + 12) }
+                if (id == "data") return@runCatching (r.length() - pos - 8).toDouble() / (rate * 2 * ch)
+                pos += 8 + len + (len and 1)
+            }
+            0.0
+        }
+    }.getOrDefault(0.0)
+
+    /** 보통 음성 대비 실제 길이 비율을 재서 저장 */
+    private fun measureFactor(p: VoicePack, v: Variant) {
+        val n = (0..59).sumOf { wavSeconds(voice(p, it)) }
+        val m = (0..59).sumOf { wavSeconds(voice(p, it, v)) }
+        if (n > 0 && m > 0) Prefs(ctx).setSpeechFactor(p.id, v.name, (n / m).toFloat().coerceIn(0.4f, 4f))
     }
 
     fun pitchOf(p: VoicePack): Float = if (Prefs(ctx).voiceProfile == 1) p.pitchPrev else p.pitch
@@ -185,7 +209,7 @@ class VoiceBank(private val ctx: Context) {
         try {
             val lang = tts.setLanguage(Locale.KOREAN)
             if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) return Result.NoKorean
-            val v = chooseVoice(tts, p, preferNetwork = variant == Variant.FAST && !forceLocal)
+            val v = chooseVoice(tts, p, preferNetwork = variant == Variant.FAST && p.fastNetwork && !forceLocal)
             if (v != null) runCatching { tts.voice = v }
             val usingNetwork = v?.isNetworkConnectionRequired == true
             val rate = when (variant) {
@@ -261,7 +285,10 @@ class VoiceBank(private val ctx: Context) {
                 }
                 if (variant == Variant.NORMAL) status("")
             }
-            if (!restartLocal) { onProgress(jobs.size, jobs.size); return Result.Ok }
+            if (!restartLocal) {
+                if (variant != Variant.NORMAL) withContext(Dispatchers.IO) { measureFactor(p, variant) }
+                onProgress(jobs.size, jobs.size); return Result.Ok
+            }
         } finally {
             tts.shutdown()
         }
