@@ -14,7 +14,7 @@ import androidx.media3.session.SessionCommand
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
-enum class Mode(val label: String) { RECITE("암송"), BLANK("빈칸"), NEXT("이어 말하기"), STATS("기록") }
+enum class Mode(val label: String) { RECITE("암송"), BLANK("빈칸"), NEXT("잇기"), STATS("기록") }
 
 /** 화면 상태와 재생 제어. */
 class AppState(ctx: Context) {

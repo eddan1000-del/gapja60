@@ -50,7 +50,7 @@ echo "--- after HOME ---" >> shots/report.txt
 adb shell dumpsys media_session | grep -m3 -E "state=PlaybackState" >> shots/report.txt
 adb shell am start -n $PKG/kr.gapja60.MainActivity; sleep 3
 
-tap '이어 말하기'; sleep 2; tap '시작'; sleep 5; shot 6-next
+tap '잇기'; sleep 2; tap '시작'; sleep 5; shot 6-next
 tap '빈칸'; sleep 2; shot 7-blank
 tap '기록'; sleep 2; shot 8-stats
 tap '설정'; sleep 2; shot 9-settings

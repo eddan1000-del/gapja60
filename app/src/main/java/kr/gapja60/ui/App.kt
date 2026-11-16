@@ -211,7 +211,7 @@ private fun DirectionCards(s: AppState, onPick: () -> Unit) {
                 ) {
                     Text(d.label, color = fg, fontWeight = FontWeight.Bold, fontSize = 17.sp, maxLines = 1, softWrap = false)
                     Spacer(Modifier.height(4.dp))
-                    Text((if (d.reverse) "← " else "→ ") + d.sample, color = fg.copy(alpha = 0.85f), fontFamily = SerifGapja, fontSize = 15.sp, maxLines = 1, softWrap = false)
+                    Text(d.sample, color = fg.copy(alpha = 0.85f), fontFamily = SerifGapja, fontSize = 15.sp, maxLines = 1, softWrap = false)
                 }
             }
         }
@@ -340,11 +340,11 @@ private fun NextPanel(s: AppState) {
         Text("앞의 간지를 듣고 다음 간지를 고르세요.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
         if (s.qCount > 0) Text("${s.qScore} / ${s.qCount}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
     }
-    Label("들려줄 앞 간지 수")
-    Chips(listOf(1 to "1개", 2 to "2개", 3 to "3개"), { s.ctxCount == it }) { s.setCtx(it) }
     Spacer(Modifier.height(12.dp))
     if (s.qChoices.isEmpty()) {
         Button(onClick = { s.newQuestion() }, Modifier.fillMaxWidth().height(60.dp)) { Text("시작", fontSize = 18.sp) }
+        Label("들려줄 앞 간지 수")
+        Chips(listOf(1 to "1개", 2 to "2개", 3 to "3개"), { s.ctxCount == it }) { s.setCtx(it) }
         return
     }
     val ctxText = kr.gapja60.Sequencer.before(s.direction, s.qAnswer, s.ctxCount).joinToString(" · ") { Gapja.hangul(it, s.direction.flip) }
@@ -380,6 +380,8 @@ private fun NextPanel(s: AppState) {
         OutlinedButton(onClick = { s.replayQuestion() }, Modifier.weight(1f).height(56.dp)) { Text("다시 듣기") }
         Button(onClick = { s.newQuestion() }, Modifier.weight(1f).height(56.dp)) { Text("다음 문제") }
     }
+    Label("들려줄 앞 간지 수")
+    Chips(listOf(1 to "1개", 2 to "2개", 3 to "3개"), { s.ctxCount == it }) { s.setCtx(it) }
 }
 
 @Composable
