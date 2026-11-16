@@ -28,6 +28,8 @@ class Prefs(ctx: Context) {
     fun speechFactor(pack: String, variant: String): Float? =
         p.getFloat("sf_${pack}_$variant", -1f).takeIf { it > 0f }
     fun setSpeechFactor(pack: String, variant: String, v: Float) = setFloat("sf_${pack}_$variant", v)
+    fun packVersion(id: String): Int = int("pv_$id", 1)
+    fun setPackVersion(id: String, v: Int) = setInt("pv_$id", v)
     var variantVersion: Int get() = int("varVer", 0); set(v) = setInt("varVer", v)
     var voiceVersion: Int get() = int("voiceVer", 0); set(v) = setInt("voiceVer", v)
     /** 배경 소리 크기: 0 없음, 1 작게, 2 보통 */

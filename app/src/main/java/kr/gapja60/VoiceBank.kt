@@ -48,8 +48,13 @@ data class VoicePack(
     val fastNetwork: Boolean = true,
     /** 네트워크 음성은 같은 설정에서 기기 안 음성보다 약 30Hz 높게 나와, 빠른 음성의 음높이를 이만큼 더 낮춰 맞춘다 */
     val fastPitchScale: Float = 1f,
-    /** 밝은 음색: 또렷함(3kHz)·공기(9kHz 이상) 대역을 조금 더 살리고 저음 보강은 뺀다 */
-    val bright: Boolean = false,
+    /**
+     * 힘 뺀 음색: 또렷함(3kHz) 대역을 1dB 낮추고 공기 대역만 살짝, 압축을 약하게(강약이 자연스럽게),
+     * 음량을 조금 낮추고 말머리를 더 둥글게 → 밀어붙이는 느낌 없이 가볍고 편안하게
+     */
+    val relaxed: Boolean = false,
+    /** 이 목소리만 다시 만들어야 할 때 올리는 번호 */
+    val ver: Int = 1,
 )
 
 object VoicePacks {
@@ -62,7 +67,9 @@ object VoicePacks {
         VoicePack("m_clear", "남성 · 또렷", "중저음, 또박또박", listOf("koc", "kod"), 0.85f, 0.9f, fastPitchScale = 1.06f),
         // 미소년: 남성 kod의 음높이를 올려 젊고 맑게. 실험(2026-11-16)에서 1.15~1.2가 기본 주파수 약 148~155Hz
         // (높지 않은 젊은 남성 음역)로, 맑음 지수(HNR 4.6~5.0dB)·떨림(3.2%)이 남성 목소리 중 가장 좋았다
-        VoicePack("m_boy", "남성 · 미소년", "높지 않은 톤, 달콤하고 맑고 밝게", listOf("kod", "koc"), 1.18f, 0.9f, bright = true),
+        // 2판: 사용자 피드백 '힘이 들어가 부담스럽다' → 음높이 1.18→1.14(약 150Hz, 실험상 1.15에서 떨림 3.2%·HNR 4.6dB),
+        //      말 속도 0.9→0.86, 밝게 살리던 처리를 '힘 뺀 음색'으로
+        VoicePack("m_boy", "남성 · 미소년", "높지 않은 톤, 맑고 편안하게", listOf("kod", "koc"), 1.14f, 0.86f, relaxed = true, ver = 2),
         VoicePack("default", "기기 기본", "이 폰의 기본 한국어 음성, 맑은 중저음", emptyList(), 0.9f, 0.86f, fastNetwork = false),
     )
     fun byId(id: String) = ALL.firstOrNull { it.id == id } ?: ALL.last()
@@ -152,6 +159,10 @@ class VoiceBank(private val ctx: Context) {
                 listOf(Variant.SLOW, Variant.FAST).forEach { v -> packDir(p, v).listFiles()?.forEach { it.delete() } }
             }
             prefs.variantVersion = VARIANT_VERSION
+        }
+        // 목소리별로 설정이 바뀐 것만 다시 만든다
+        VoicePacks.ALL.forEach { p ->
+            if (prefs.packVersion(p.id) < p.ver) { clear(p); prefs.setPackVersion(p.id, p.ver) }
         }
     }
 
@@ -272,7 +283,14 @@ class VoiceBank(private val ctx: Context) {
                 val code = if (r != TextToSpeech.SUCCESS) -100 + r else (withTimeoutOrNull(20_000) { d.await() } ?: -200)
                 if (code != 0 || tmp.length() < 500) { tmp.delete(); return if (code == 0) -300 else code }
                 val base = SoftVoice.STYLES[Prefs(ctx).softness.coerceIn(0, 2)]
-                val style = if (p.bright) base.copy(presenceDb = base.presenceDb + 1.0, airDb = base.airDb + 1.0, lowShelfDb = 0.0) else base
+                val style = if (p.relaxed) base.copy(
+                    presenceDb = base.presenceDb - 1.0,
+                    airDb = base.airDb + 0.5,
+                    lowShelfDb = 0.5,
+                    compRatio = 1.2,
+                    targetRms = base.targetRms * 0.85,
+                    fadeInMs = base.fadeInMs + 15,
+                ) else base
                 withContext(Dispatchers.Default) {
                     if (!polish(tmp, file, style, leadMs)) tmp.renameTo(file) else tmp.delete()
                 }
