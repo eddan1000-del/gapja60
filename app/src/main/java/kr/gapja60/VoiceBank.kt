@@ -41,19 +41,24 @@ data class VoicePack(
     val pitch: Float,
     val rate: Float,
     val pitchPrev: Float = pitch,
-    /** 빠른 음성에 네트워크 음성을 쓸지. 남성은 기기 안 음성의 고속 합성 떨림이 커서 네트워크, 여성은 음색 일관성을 위해 기기 안 음성 */
-    val fastNetwork: Boolean = false,
+    /**
+     * 빠른 음성에 네트워크 음성을 쓸지. 실험에서 고속 합성은 네트워크 음성이 훨씬 깨끗했다
+     * (여성 HNR 6.3dB vs 기기 안 3.1dB, 남성 떨림 3.4% vs 8.4%).
+     */
+    val fastNetwork: Boolean = true,
+    /** 네트워크 음성은 같은 설정에서 기기 안 음성보다 약 30Hz 높게 나와, 빠른 음성의 음높이를 이만큼 더 낮춰 맞춘다 */
+    val fastPitchScale: Float = 1f,
 )
 
 object VoicePacks {
     val ALL = listOf(
         // 맑은 중저음: 음높이를 많이 내리면 소리가 탁해지므로 살짝만 낮추고(여성 0.9~0.93, 남성 0.84~0.88),
         // 탁함은 음색 처리(300Hz 감쇠, 3kHz 또렷함 보강)로 걷어낸다
-        VoicePack("f_calm", "여성 · 차분", "맑은 중저음, 부드럽고 천천히", listOf("kob", "ism"), 0.94f, 0.82f, pitchPrev = 0.9f),
-        VoicePack("f_clear", "여성 · 또렷", "중저음, 또박또박", listOf("ism", "kob"), 0.89f, 0.9f),
-        VoicePack("m_low", "남성 · 저음", "맑은 저음, 천천히", listOf("kod", "koc"), 0.92f, 0.82f, pitchPrev = 0.84f, fastNetwork = true),
-        VoicePack("m_clear", "남성 · 또렷", "중저음, 또박또박", listOf("koc", "kod"), 0.85f, 0.9f, fastNetwork = true),
-        VoicePack("default", "기기 기본", "이 폰의 기본 한국어 음성, 맑은 중저음", emptyList(), 0.92f, 0.86f, pitchPrev = 0.9f),
+        VoicePack("f_calm", "여성 · 차분", "맑은 중저음, 부드럽고 천천히", listOf("kob", "ism"), 0.94f, 0.82f, pitchPrev = 0.9f, fastPitchScale = 0.95f),
+        VoicePack("f_clear", "여성 · 또렷", "중저음, 또박또박", listOf("ism", "kob"), 0.89f, 0.9f, fastPitchScale = 0.95f),
+        VoicePack("m_low", "남성 · 저음", "맑은 저음, 천천히", listOf("kod", "koc"), 0.92f, 0.82f, pitchPrev = 0.84f),
+        VoicePack("m_clear", "남성 · 또렷", "중저음, 또박또박", listOf("koc", "kod"), 0.85f, 0.9f),
+        VoicePack("default", "기기 기본", "이 폰의 기본 한국어 음성, 맑은 중저음", emptyList(), 0.92f, 0.86f, pitchPrev = 0.9f, fastNetwork = false),
     )
     fun byId(id: String) = ALL.firstOrNull { it.id == id } ?: ALL.last()
 }
@@ -66,11 +71,11 @@ object VoicePacks {
 class VoiceBank(private val ctx: Context) {
     companion object {
         const val TAG = "Gapja60"
-        const val VOICE_VERSION = 10
+        const val VOICE_VERSION = 11
         /** 빠른 속도용 음성의 합성 속도 */
         const val FAST_RATE = 2.0f
         /** 느린 속도용 음성의 합성 속도 배율 */
-        const val SLOW_FACTOR = 0.8f
+        const val SLOW_FACTOR = 0.72f   // 실측: 합성 속도 0.8배 → 실제 말 길이는 0.9배에 그쳐, 0.72로 낮춰 약 0.8배를 맞춤
     }
 
     /**
@@ -217,7 +222,7 @@ class VoiceBank(private val ctx: Context) {
                 Variant.SLOW -> p.rate * SLOW_FACTOR
                 Variant.FAST -> FAST_RATE
             }
-            val pitch = pitchOf(p)
+            val pitch = pitchOf(p) * (if (usingNetwork && variant == Variant.FAST) p.fastPitchScale else 1f)
             tts.setSpeechRate(rate)
             tts.setPitch(pitch)
             val vname = runCatching { tts.voice?.name }.getOrNull() ?: "한국어"
