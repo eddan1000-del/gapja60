@@ -28,7 +28,7 @@ adb install -r gapja60.apk
 adb logcat -c
 adb shell am start -n $PKG/kr.gapja60.MainActivity
 sleep 6; shot 1-setup
-for i in $(seq 1 40); do has '순행 뒤집기' && break; sleep 5; done
+for i in $(seq 1 50); do has '순행 뒤집기' && break; sleep 5; done
 has '순행 뒤집기' && echo "HOME OK" >> shots/report.txt || echo "HOME NOT REACHED" >> shots/report.txt
 grep -o 'text="[^"]*"' shots/ui.xml | head -20 >> shots/report.txt
 shot 2-home
@@ -56,6 +56,8 @@ tap '기록'; sleep 2; shot 8-stats
 tap '설정'; sleep 2; shot 9-settings
 
 adb logcat -d > shots/logcat.txt
+echo "--- TTS log ---" >> shots/report.txt
+grep -E "Gapja60|TextToSpeech|TtsService|GoogleTTS|tts" shots/logcat.txt | grep -v Phenotype | head -60 >> shots/report.txt
 grep -E "FATAL EXCEPTION" -A25 shots/logcat.txt > shots/crash.txt || true
 [ -s shots/crash.txt ] || echo "no crash" > shots/crash.txt
 adb shell pidof $PKG >> shots/report.txt || echo "PROCESS DEAD" >> shots/report.txt

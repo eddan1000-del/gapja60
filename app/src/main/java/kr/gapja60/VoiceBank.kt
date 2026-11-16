@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -25,6 +27,8 @@ import kotlin.math.sin
  * 이후 재생은 모두 이 파일로 하므로 배속·백그라운드 재생이 안정적이다.
  */
 class VoiceBank(private val ctx: Context) {
+    companion object { const val TAG = "Gapja60" }
+
     val dir = File(ctx.filesDir, "voice").apply { mkdirs() }
 
     fun voice(idx: Int, flip: Boolean) = File(dir, (if (flip) "r_" else "f_") + "%02d".format(idx) + ".wav")
@@ -42,8 +46,13 @@ class VoiceBank(private val ctx: Context) {
         data object Ok : Result()
         data object NoKorean : Result()
         data object NoEngine : Result()
-        data class Failed(val what: String) : Result()
+        /** 한국어 음성이 아직 기기에 내려받아지지 않음(엔진이 내려받는 중일 수 있음) */
+        data object VoiceNotInstalled : Result()
+        data class Failed(val what: String, val code: Int) : Result()
     }
+
+    /** 진행 중 상태 문구(예: 한국어 음성 내려받는 중) */
+    var status: (String) -> Unit = {}
 
     suspend fun build(onProgress: (Int, Int) -> Unit): Result {
         withContext(Dispatchers.IO) { writeTones() }
@@ -54,22 +63,24 @@ class VoiceBank(private val ctx: Context) {
             val lang = tts.setLanguage(Locale.KOREAN)
             if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) return Result.NoKorean
             runCatching {
-                tts.voices
-                    ?.filter { it.locale.language == "ko" && !it.isNetworkConnectionRequired && !it.features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) }
-                    ?.maxByOrNull { it.quality }
+                val ko = tts.voices?.filter { it.locale.language == "ko" } ?: emptyList()
+                ko.forEach { Log.i(TAG, "voice ${it.name} q=${it.quality} net=${it.isNetworkConnectionRequired} feat=${it.features}") }
+                ko.filter { !it.isNetworkConnectionRequired && !it.features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) }
+                    .maxByOrNull { it.quality }
                     ?.let { tts.voice = it }
             }
+            Log.i(TAG, "engine=${tts.defaultEngine} lang=$lang voice=${runCatching { tts.voice?.name }.getOrNull()}")
             tts.setSpeechRate(1.0f)
             tts.setPitch(1.0f)
             Prefs(ctx).voiceInfo = "${tts.defaultEngine ?: "기본 엔진"} · ${runCatching { tts.voice?.name }.getOrNull() ?: "한국어"}"
 
-            val pending = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
+            val pending = ConcurrentHashMap<String, CompletableDeferred<Int>>()
             tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(id: String?) {}
-                override fun onDone(id: String?) { id?.let { pending.remove(it)?.complete(true) } }
+                override fun onDone(id: String?) { id?.let { pending.remove(it)?.complete(0) } }
                 @Deprecated("Deprecated in Java")
-                override fun onError(id: String?) { id?.let { pending.remove(it)?.complete(false) } }
-                override fun onError(id: String?, code: Int) { id?.let { pending.remove(it)?.complete(false) } }
+                override fun onError(id: String?) { id?.let { pending.remove(it)?.complete(-1) } }
+                override fun onError(id: String?, code: Int) { id?.let { pending.remove(it)?.complete(code) } }
             })
 
             val jobs = ArrayList<Pair<String, File>>()
@@ -77,16 +88,36 @@ class VoiceBank(private val ctx: Context) {
             for (i in 0..59) jobs += Gapja.hangul(i, true) to voice(i, true)
             jobs += "다음은?" to next
 
+            suspend fun synth(text: String, file: File): Int {
+                val tmp = File(dir, file.name + ".tmp")
+                val d = CompletableDeferred<Int>()
+                pending[file.name] = d
+                val r = tts.synthesizeToFile(text, Bundle(), tmp, file.name)
+                val code = if (r != TextToSpeech.SUCCESS) -100 + r else (withTimeoutOrNull(20_000) { d.await() } ?: -200)
+                if (code != 0 || tmp.length() < 500) { tmp.delete(); return if (code == 0) -300 else code }
+                tmp.renameTo(file)
+                return 0
+            }
+
             jobs.forEachIndexed { n, (text, file) ->
                 onProgress(n, jobs.size)
                 if (file.length() > 500) return@forEachIndexed   // 이미 만들어진 파일은 건너뜀(중단 후 이어서 만들기)
-                val tmp = File(dir, file.name + ".tmp")
-                val d = CompletableDeferred<Boolean>()
-                pending[file.name] = d
-                val r = tts.synthesizeToFile(text, Bundle(), tmp, file.name)
-                val done = r == TextToSpeech.SUCCESS && (withTimeoutOrNull(20_000) { d.await() } ?: false)
-                if (!done || tmp.length() < 500) { tmp.delete(); return Result.Failed(text) }
-                tmp.renameTo(file)
+                var code = synth(text, file)
+                // 첫 음성에서 실패하면 엔진이 한국어 음성을 내려받는 중일 수 있으므로 잠시 기다리며 다시 시도
+                var tries = 0
+                while (code != 0 && n == 0 && tries < 12) {
+                    Log.w(TAG, "synth fail '$text' code=$code, retry $tries")
+                    status("한국어 음성을 준비하는 중… (${tries + 1}/12)")
+                    delay(5_000); tries++
+                    code = synth(text, file)
+                }
+                if (code != 0 && n > 0) code = synth(text, file)   // 중간 실패는 한 번 더
+                if (code != 0) {
+                    Log.e(TAG, "synth fail '$text' code=$code")
+                    return if (code == TextToSpeech.ERROR_NOT_INSTALLED_YET || code == TextToSpeech.ERROR_NETWORK || code == TextToSpeech.ERROR_NETWORK_TIMEOUT || n == 0) Result.VoiceNotInstalled
+                    else Result.Failed(text, code)
+                }
+                status("")
             }
             onProgress(jobs.size, jobs.size)
             return Result.Ok

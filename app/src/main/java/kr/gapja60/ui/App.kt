@@ -101,8 +101,10 @@ private fun VoiceSetup(s: AppState) {
     var error by remember { mutableStateOf<VoiceBank.Result?>(null) }
     var attempt by remember { mutableIntStateOf(0) }
 
+    var status by remember { mutableStateOf("") }
     LaunchedEffect(attempt) {
         error = null
+        s.voices.status = { status = it }
         val r = s.voices.build { n, total -> progress = n.toFloat() / total }
         if (r is VoiceBank.Result.Ok) s.voiceReady = true else error = r
     }
@@ -118,7 +120,7 @@ private fun VoiceSetup(s: AppState) {
         val e = error
         if (e == null) {
             Text("음성을 준비하고 있습니다", style = MaterialTheme.typography.titleMedium)
-            Text("처음 한 번만 필요합니다 · 약 1~2분", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(status.ifBlank { "처음 한 번만 필요합니다 · 약 1~2분" }, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(20.dp))
             LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)))
             Text("${(progress * 121).toInt()} / 121", Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -126,7 +128,8 @@ private fun VoiceSetup(s: AppState) {
             val msg = when (e) {
                 VoiceBank.Result.NoKorean -> "한국어 음성 데이터가 없습니다.\n'음성 데이터 설치'에서 한국어를 내려받은 뒤 다시 시도해 주세요."
                 VoiceBank.Result.NoEngine -> "음성 합성 엔진을 찾지 못했습니다.\nPlay 스토어에서 'Google 음성 서비스'를 설치해 주세요."
-                is VoiceBank.Result.Failed -> "'${e.what}' 음성을 만들지 못했습니다.\n잠시 후 다시 시도해 주세요."
+                VoiceBank.Result.VoiceNotInstalled -> "한국어 음성이 아직 이 폰에 설치되지 않았습니다.\n'음성 데이터 설치'에서 한국어(대한민국)를 내려받은 뒤\n'다시 시도'를 눌러 주세요."
+                is VoiceBank.Result.Failed -> "'${e.what}' 음성을 만들지 못했습니다(오류 ${e.code}).\n잠시 후 다시 시도해 주세요."
                 else -> ""
             }
             Text(msg, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyLarge)
