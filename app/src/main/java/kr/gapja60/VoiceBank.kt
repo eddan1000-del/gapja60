@@ -56,8 +56,8 @@ object VoicePacks {
         // 탁함은 음색 처리(300Hz 감쇠, 3kHz 또렷함 보강)로 걷어낸다
         VoicePack("f_calm", "여성 · 차분", "맑은 중저음, 부드럽고 천천히", listOf("kob", "ism"), 0.9f, 0.82f, fastPitchScale = 0.95f),
         VoicePack("f_clear", "여성 · 또렷", "중저음, 또박또박", listOf("ism", "kob"), 0.89f, 0.9f, fastPitchScale = 0.95f),
-        VoicePack("m_low", "남성 · 저음", "맑은 저음, 천천히", listOf("kod", "koc"), 0.84f, 0.82f),
-        VoicePack("m_clear", "남성 · 또렷", "중저음, 또박또박", listOf("koc", "kod"), 0.85f, 0.9f),
+        VoicePack("m_low", "남성 · 저음", "맑은 저음, 천천히", listOf("kod", "koc"), 0.84f, 0.82f, fastPitchScale = 1.07f),
+        VoicePack("m_clear", "남성 · 또렷", "중저음, 또박또박", listOf("koc", "kod"), 0.85f, 0.9f, fastPitchScale = 1.06f),
         VoicePack("default", "기기 기본", "이 폰의 기본 한국어 음성, 맑은 중저음", emptyList(), 0.9f, 0.86f, fastNetwork = false),
     )
     fun byId(id: String) = ALL.firstOrNull { it.id == id } ?: ALL.last()
@@ -74,7 +74,9 @@ class VoiceBank(private val ctx: Context) {
         // 12 = 1.0.19 보통 음성(그대로 유지, 다시 만들지 않음)
         const val VOICE_VERSION = 12
         /** 빠른·느린 음성 묶음의 버전. 바뀌면 그 묶음만 지우고 뒤에서 다시 만든다 */
-        const val VARIANT_VERSION = 1
+        // 2: 남성 빠른 음성은 음높이를 약 0.9로(네트워크 남성 0.84는 실험에서 HNR 2.8dB·떨림 4.3%로 가장 거칠었음.
+        //    0.9에서는 기본 주파수 약 123Hz로 보통 음성(기기 안 0.84, 약 119Hz)과 비슷한 높이)
+        const val VARIANT_VERSION = 2
         /** 빠른 속도용 음성의 합성 속도 */
         const val FAST_RATE = 2.0f
         /** 느린 속도용 음성의 합성 속도 배율 */
