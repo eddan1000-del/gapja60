@@ -138,8 +138,7 @@ object SoftVoice {
 
     private fun compress(x: DoubleArray, fs: Int, threshold: Double, ratio: Double) {
         if (ratio <= 1.0) return
-        // 어택을 기본 주파수 한 주기(남성 약 8ms)보다 충분히 길게 → 주기마다 음량이 흔들리며 생기는 '부르르' 잡음 방지
-        val att = exp(-1.0 / (fs * 0.03)); val rel = exp(-1.0 / (fs * 0.2))
+        val att = exp(-1.0 / (fs * 0.008)); val rel = exp(-1.0 / (fs * 0.12))
         var env = 0.0
         for (i in x.indices) {
             val a = abs(x[i])

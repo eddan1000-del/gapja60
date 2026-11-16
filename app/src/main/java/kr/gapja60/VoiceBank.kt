@@ -27,11 +27,7 @@ import kotlin.math.sin
 /**
  * 음성 버전. voiceKeys는 구글 한국어 음성 이름(ko-kr-x-<key>-local/network)의 후보이며 앞의 것이 우선이다.
  * 구글 음성의 한국어 목소리: ism·kob = 여성, koc·kod = 남성.
- * pitch는 1.0보다 낮춰 높은 톤을 피한다. pitchPrev는 1.0.19(이전 설정)의 값으로, 설정에서 비교 선택할 수 있다.
- *
- * 실험(에뮬레이터, 2026-11) 결과: 합성 음높이를 내릴수록 조화음 대 잡음비(HNR)가 떨어지고 떨림이 커져
- * 그르렁거림의 원인이 되었다(남성 kod 0.84: HNR 2.8dB → 0.95: 3.8dB, 여성 kob 0.9: 5.6dB → 0.95: 6.2dB).
- * 그래서 '차분'·'저음'은 음높이를 그 한계까지만 내리고, 중저음 느낌은 음색 처리로 보탠다.
+ * pitch는 1.0보다 낮춰 높은 톤을 피한다.
  */
 data class VoicePack(
     val id: String,
@@ -40,25 +36,17 @@ data class VoicePack(
     val voiceKeys: List<String>,
     val pitch: Float,
     val rate: Float,
-    val pitchPrev: Float = pitch,
-    /**
-     * 빠른 음성에 네트워크 음성을 쓸지. 실험에서 고속 합성은 네트워크 음성이 훨씬 깨끗했다
-     * (여성 HNR 6.3dB vs 기기 안 3.1dB, 남성 떨림 3.4% vs 8.4%).
-     */
-    val fastNetwork: Boolean = true,
-    /** 네트워크 음성은 같은 설정에서 기기 안 음성보다 약 30Hz 높게 나와, 빠른 음성의 음높이를 이만큼 더 낮춰 맞춘다 */
-    val fastPitchScale: Float = 1f,
 )
 
 object VoicePacks {
     val ALL = listOf(
         // 맑은 중저음: 음높이를 많이 내리면 소리가 탁해지므로 살짝만 낮추고(여성 0.9~0.93, 남성 0.84~0.88),
         // 탁함은 음색 처리(300Hz 감쇠, 3kHz 또렷함 보강)로 걷어낸다
-        VoicePack("f_calm", "여성 · 차분", "맑은 중저음, 부드럽고 천천히", listOf("kob", "ism"), 0.94f, 0.82f, pitchPrev = 0.9f, fastPitchScale = 0.95f),
-        VoicePack("f_clear", "여성 · 또렷", "중저음, 또박또박", listOf("ism", "kob"), 0.89f, 0.9f, fastPitchScale = 0.95f),
-        VoicePack("m_low", "남성 · 저음", "맑은 저음, 천천히", listOf("kod", "koc"), 0.92f, 0.82f, pitchPrev = 0.84f),
+        VoicePack("f_calm", "여성 · 차분", "맑은 중저음, 부드럽고 천천히", listOf("kob", "ism"), 0.9f, 0.82f),
+        VoicePack("f_clear", "여성 · 또렷", "중저음, 또박또박", listOf("ism", "kob"), 0.89f, 0.9f),
+        VoicePack("m_low", "남성 · 저음", "맑은 저음, 천천히", listOf("kod", "koc"), 0.84f, 0.82f),
         VoicePack("m_clear", "남성 · 또렷", "중저음, 또박또박", listOf("koc", "kod"), 0.85f, 0.9f),
-        VoicePack("default", "기기 기본", "이 폰의 기본 한국어 음성, 맑은 중저음", emptyList(), 0.92f, 0.86f, pitchPrev = 0.9f, fastNetwork = false),
+        VoicePack("default", "기기 기본", "이 폰의 기본 한국어 음성, 맑은 중저음", emptyList(), 0.9f, 0.86f),
     )
     fun byId(id: String) = ALL.firstOrNull { it.id == id } ?: ALL.last()
 }
@@ -71,56 +59,13 @@ object VoicePacks {
 class VoiceBank(private val ctx: Context) {
     companion object {
         const val TAG = "Gapja60"
-        const val VOICE_VERSION = 11
-        /** 빠른 속도용 음성의 합성 속도 */
-        const val FAST_RATE = 2.0f
-        /** 느린 속도용 음성의 합성 속도 배율 */
-        const val SLOW_FACTOR = 0.72f   // 실측: 합성 속도 0.8배 → 실제 말 길이는 0.9배에 그쳐, 0.72로 낮춰 약 0.8배를 맞춤
+        const val VOICE_VERSION = 12   // 1.0.19 방식으로 되돌림: 이후 버전에서 만든 목소리를 지우고 1.0.19 설정으로 다시 만든다
     }
-
-    /**
-     * 속도별 음성 묶음.
-     * 재생 배속(시간 늘이기·줄이기)은 배율이 커질수록 소리가 긁히거나 뭉개진다. 그래서
-     * 빠르게(2배 이상) 들을 때는 처음부터 빠르게 읽은 FAST, 느리게(0.85배 이하) 들을 때는 처음부터 천천히 읽은 SLOW를 쓰고
-     * 재생 배속은 1에 가깝게 유지한다.
-     */
-    enum class Variant(val suffix: String) { NORMAL(""), SLOW("_slow"), FAST("_fast") }
 
     val root = File(ctx.filesDir, "voice").apply { mkdirs() }
-    private fun packDir(p: VoicePack, v: Variant = Variant.NORMAL) = File(root, p.id + v.suffix).apply { mkdirs() }
+    private fun packDir(p: VoicePack) = File(root, p.id).apply { mkdirs() }
 
-    fun voice(p: VoicePack, idx: Int, v: Variant = Variant.NORMAL) = File(packDir(p, v), "f_%02d.wav".format(idx))
-
-    /** 이 변형의 '말 속도' 배율(보통 음성 대비) */
-    fun speechFactor(p: VoicePack, v: Variant): Float = when (v) {
-        Variant.NORMAL -> 1f
-        // 만든 뒤 실제 길이로 잰 배율이 있으면 그것을 쓴다(합성 속도 값과 실제 말 속도는 정확히 비례하지 않음)
-        else -> Prefs(ctx).speechFactor(p.id, v.name) ?: if (v == Variant.SLOW) SLOW_FACTOR else FAST_RATE / p.rate
-    }
-
-    private fun wavSeconds(f: File): Double = runCatching {
-        RandomAccessFile(f, "r").use { r ->
-            val b = ByteArray(minOf(r.length(), 4096L).toInt()); r.readFully(b)
-            val bb = ByteBuffer.wrap(b).order(ByteOrder.LITTLE_ENDIAN)
-            var pos = 12; var rate = 0; var ch = 1
-            while (pos + 8 <= b.size) {
-                val id = String(b, pos, 4); val len = bb.getInt(pos + 4)
-                if (id == "fmt ") { ch = bb.getShort(pos + 10).toInt(); rate = bb.getInt(pos + 12) }
-                if (id == "data") return@runCatching (r.length() - pos - 8).toDouble() / (rate * 2 * ch)
-                pos += 8 + len + (len and 1)
-            }
-            0.0
-        }
-    }.getOrDefault(0.0)
-
-    /** 보통 음성 대비 실제 길이 비율을 재서 저장 */
-    private fun measureFactor(p: VoicePack, v: Variant) {
-        val n = (0..59).sumOf { wavSeconds(voice(p, it)) }
-        val m = (0..59).sumOf { wavSeconds(voice(p, it, v)) }
-        if (n > 0 && m > 0) Prefs(ctx).setSpeechFactor(p.id, v.name, (n / m).toFloat().coerceIn(0.4f, 4f))
-    }
-
-    fun pitchOf(p: VoicePack): Float = if (Prefs(ctx).voiceProfile == 1) p.pitchPrev else p.pitch
+    fun voice(p: VoicePack, idx: Int) = File(packDir(p), "f_%02d.wav".format(idx))
     fun next(p: VoicePack) = File(packDir(p), "next.wav")
     val ok get() = File(root, "ok.wav")
     val ng get() = File(root, "ng.wav")
@@ -129,14 +74,12 @@ class VoiceBank(private val ctx: Context) {
     val noise get() = File(root, "bg_brown.wav")
 
 
-    /** 음성 처리 방식이 바뀌면(버전 올림, 8 = 1.0.19 방식으로 되돌림) 만들어 둔 음성을 모두 지워 다시 만들게 한다 */
+    /** 음성 처리 방식이 바뀌면(버전 올림) 만들어 둔 음성을 모두 지워 다시 만들게 한다 */
     fun upgradeIfNeeded(prefs: Prefs) {
         if (prefs.voiceVersion >= VOICE_VERSION) return
         VoicePacks.ALL.forEach { clear(it) }
         prefs.voiceVersion = VOICE_VERSION
     }
-
-    fun isReady(p: VoicePack, v: Variant): Boolean = (0..59).all { voice(p, it, v).length() > 500 }
 
     fun isReady(p: VoicePack): Boolean =
         (0..59).all { voice(p, it).length() > 500 } && next(p).length() > 500 &&
@@ -147,7 +90,7 @@ class VoiceBank(private val ctx: Context) {
         root.listFiles()?.filter { it.isFile && (it.name.startsWith("f_") || it.name.startsWith("r_") || it.name == "next.wav") }?.forEach { it.delete() }
     }
 
-    fun clear(p: VoicePack) { Variant.entries.forEach { v -> packDir(p, v).listFiles()?.forEach { it.delete() } } }
+    fun clear(p: VoicePack) { packDir(p).listFiles()?.forEach { it.delete() } }
 
     sealed class Result {
         data object Ok : Result()
@@ -169,17 +112,11 @@ class VoiceBank(private val ctx: Context) {
         } finally { tts.shutdown() }
     }
 
-    /**
-     * 보통·느린 음성은 기기 안 음성(1.0.19에서 듣기 좋았던 방식).
-     * 빠른 음성은 실험에서 고속 합성 시 떨림이 훨씬 적었던 네트워크 음성을 우선(남성 2배속 떨림 8.4% → 3.4%).
-     */
-    private fun chooseVoice(tts: TextToSpeech, p: VoicePack, preferNetwork: Boolean = false): Voice? {
+    private fun chooseVoice(tts: TextToSpeech, p: VoicePack): Voice? {
         val ko = runCatching { tts.voices?.filter { it.locale.language == "ko" } }.getOrNull() ?: return null
         for (k in p.voiceKeys) {
             val c = ko.filter { it.name.contains("-x-$k-") }
-            val net = c.firstOrNull { it.isNetworkConnectionRequired }
-            val local = c.firstOrNull { !it.isNetworkConnectionRequired }
-            (if (preferNetwork) net ?: local else local ?: net)?.let { return it }
+            (c.firstOrNull { !it.isNetworkConnectionRequired } ?: c.firstOrNull())?.let { return it }
         }
         return null
     }
@@ -191,7 +128,7 @@ class VoiceBank(private val ctx: Context) {
         val tts = previewTts ?: (initTts("com.google.android.tts") ?: initTts(null))?.also { previewTts = it } ?: return
         tts.setLanguage(Locale.KOREAN)
         chooseVoice(tts, p)?.let { runCatching { tts.voice = it } }
-        tts.setPitch(pitchOf(p)); tts.setSpeechRate(p.rate)
+        tts.setPitch(p.pitch); tts.setSpeechRate(p.rate)
         // 미리 듣기는 실제 파일(음색 처리 포함)로 들려주는 것이 정확하므로, 파일이 있으면 그걸 우선 사용
         tts.speak("갑자. 을축. 병인. 정묘.", TextToSpeech.QUEUE_FLUSH, null, "preview")
     }
@@ -200,34 +137,21 @@ class VoiceBank(private val ctx: Context) {
     fun releasePreview() { previewTts?.shutdown(); previewTts = null }
 
     // ───────── 만들기 ─────────
-    suspend fun build(
-        p: VoicePack,
-        variant: Variant = Variant.NORMAL,
-        forceLocal: Boolean = false,
-        onProgress: (Int, Int) -> Unit,
-    ): Result {
+    suspend fun build(p: VoicePack, onProgress: (Int, Int) -> Unit): Result {
         withContext(Dispatchers.IO) { writeTones() }
-        if (variant == Variant.NORMAL && copyFromAssets(p, onProgress)) return Result.Ok
+        if (copyFromAssets(p, onProgress)) return Result.Ok
 
         val tts = initTts("com.google.android.tts") ?: initTts(null) ?: return Result.NoEngine
-        var restartLocal = false
         try {
             val lang = tts.setLanguage(Locale.KOREAN)
             if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) return Result.NoKorean
-            val v = chooseVoice(tts, p, preferNetwork = variant == Variant.FAST && p.fastNetwork && !forceLocal)
+            val v = chooseVoice(tts, p)
             if (v != null) runCatching { tts.voice = v }
-            val usingNetwork = v?.isNetworkConnectionRequired == true
-            val rate = when (variant) {
-                Variant.NORMAL -> p.rate
-                Variant.SLOW -> p.rate * SLOW_FACTOR
-                Variant.FAST -> FAST_RATE
-            }
-            val pitch = pitchOf(p) * (if (usingNetwork && variant == Variant.FAST) p.fastPitchScale else 1f)
-            tts.setSpeechRate(rate)
-            tts.setPitch(pitch)
+            tts.setSpeechRate(p.rate)
+            tts.setPitch(p.pitch)
             val vname = runCatching { tts.voice?.name }.getOrNull() ?: "한국어"
-            Log.i(TAG, "pack=${p.id} variant=$variant engine=${tts.defaultEngine} voice=$vname pitch=$pitch rate=$rate")
-            if (variant == Variant.NORMAL) Prefs(ctx).setVoiceInfo(p.id, "${p.label} · $vname · 음높이 $pitch")
+            Log.i(TAG, "pack=${p.id} engine=${tts.defaultEngine} voice=$vname")
+            Prefs(ctx).setVoiceInfo(p.id, "${p.label} · $vname")
 
             val pending = ConcurrentHashMap<String, CompletableDeferred<Int>>()
             tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
@@ -240,10 +164,8 @@ class VoiceBank(private val ctx: Context) {
 
             val jobs = ArrayList<Pair<String, File>>()
             // 마침표를 붙여 끝이 내려가는 차분한 평서 억양으로 읽게 한다
-            for (i in 0..59) jobs += (Gapja.hangul(i) + ".") to voice(p, i, variant)
-            if (variant == Variant.NORMAL) jobs += "다음은?" to next(p)
-            // 빠른 음성은 앞 무음을 짧게(간지 사이가 늘어지지 않게)
-            val leadMs = if (variant == Variant.FAST) 15 else 60
+            for (i in 0..59) jobs += (Gapja.hangul(i) + ".") to voice(p, i)
+            jobs += "다음은?" to next(p)
 
             suspend fun synth(text: String, file: File): Int {
                 val tmp = File(file.parentFile, file.name + ".tmp")
@@ -254,30 +176,24 @@ class VoiceBank(private val ctx: Context) {
                 if (code != 0 || tmp.length() < 500) { tmp.delete(); return if (code == 0) -300 else code }
                 val style = SoftVoice.STYLES[Prefs(ctx).softness.coerceIn(0, 2)]
                 withContext(Dispatchers.Default) {
-                    if (!polish(tmp, file, style, leadMs)) tmp.renameTo(file) else tmp.delete()
+                    if (!polish(tmp, file, style)) tmp.renameTo(file) else tmp.delete()
                 }
                 return 0
             }
 
-            for ((n, job) in jobs.withIndex()) {
-                val (text, file) = job
+            jobs.forEachIndexed { n, (text, file) ->
                 onProgress(n, jobs.size)
-                if (file.length() > 500) continue
+                if (file.length() > 500) return@forEachIndexed
                 var code = synth(text, file)
-                if (code != 0 && usingNetwork) {
-                    // 네트워크 음성이 안 되면(인터넷 없음 등) 기기 안 음성으로 이 묶음을 처음부터 다시 만든다(섞이지 않게)
-                    delay(2_000); code = synth(text, file)
-                    if (code != 0) { restartLocal = true; break }
-                }
                 var tries = 0
                 while (code != 0 && n == 0 && tries < 12) {
                     Log.w(TAG, "synth fail '$text' code=$code, retry $tries")
-                    if (variant == Variant.NORMAL) status("한국어 음성을 준비하는 중… (${tries + 1}/12)")
+                    status("한국어 음성을 준비하는 중… (${tries + 1}/12)")
                     delay(5_000); tries++
                     if (tries == 6 && v != null) {
                         // 고른 목소리가 이 폰에 아직 없으면 기본 한국어 목소리로 대체
-                        tts.setLanguage(Locale.KOREAN); tts.setPitch(pitch); tts.setSpeechRate(rate)
-                        if (variant == Variant.NORMAL) Prefs(ctx).setVoiceInfo(p.id, "${p.label} · 기본 한국어 목소리로 대체")
+                        tts.setLanguage(Locale.KOREAN); tts.setPitch(p.pitch); tts.setSpeechRate(p.rate)
+                        Prefs(ctx).setVoiceInfo(p.id, "${p.label} · 기본 한국어 목소리로 대체")
                     }
                     code = synth(text, file)
                 }
@@ -288,18 +204,13 @@ class VoiceBank(private val ctx: Context) {
                         code == TextToSpeech.ERROR_NETWORK_TIMEOUT || n == 0) Result.VoiceNotInstalled
                     else Result.Failed(text, code)
                 }
-                if (variant == Variant.NORMAL) status("")
+                status("")
             }
-            if (!restartLocal) {
-                if (variant != Variant.NORMAL) withContext(Dispatchers.IO) { measureFactor(p, variant) }
-                onProgress(jobs.size, jobs.size); return Result.Ok
-            }
+            onProgress(jobs.size, jobs.size)
+            return Result.Ok
         } finally {
             tts.shutdown()
         }
-        Log.w(TAG, "network voice failed → local ($variant)")
-        packDir(p, variant).listFiles()?.forEach { it.delete() }
-        return build(p, variant, forceLocal = true, onProgress = onProgress)
     }
 
     private suspend fun initTts(engine: String?): TextToSpeech? = withContext(Dispatchers.Main) {
@@ -332,7 +243,7 @@ class VoiceBank(private val ctx: Context) {
      * 합성된 wav(16비트 PCM)를 읽어 앞뒤 무음을 잘라내고(앞 60ms로 통일),
      * SoftVoice로 고음 완화·압축·잔향·페이드·음량 맞춤을 한다. 실패하면 false(원본 그대로 사용).
      */
-    private fun polish(src: File, dst: File, style: SoftVoice.Style, leadMs: Int = 60): Boolean = runCatching {
+    private fun polish(src: File, dst: File, style: SoftVoice.Style): Boolean = runCatching {
         val bytes = src.readBytes()
         val bb = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
         if (bytes.size < 44 || String(bytes, 0, 4) != "RIFF" || String(bytes, 8, 4) != "WAVE") return false
@@ -355,7 +266,7 @@ class VoiceBank(private val ctx: Context) {
         if (a < 0 || b <= a) return false
         a = (a - rate * 30 / 1000).coerceAtLeast(0); b = (b + rate * 40 / 1000).coerceAtMost(frames - 1)
         val soft = SoftVoice.process(pcm.copyOfRange(a, b + 1), rate, style)
-        val lead = rate * leadMs / 1000
+        val lead = rate * 60 / 1000
         val out = ShortArray(lead + soft.size)
         System.arraycopy(soft, 0, out, lead, soft.size)
         writeWav(dst, out, rate)

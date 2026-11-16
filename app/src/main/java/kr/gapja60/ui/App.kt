@@ -112,7 +112,7 @@ private fun VoiceSetup(s: AppState) {
         error = null
         s.voices.status = { status = it }
         val r = s.voices.build(s.pack) { n, total -> progress = n.toFloat() / total }
-        if (r is VoiceBank.Result.Ok) { s.voiceReady = true; s.ensureVariants() } else error = r
+        if (r is VoiceBank.Result.Ok) s.voiceReady = true else error = r
     }
 
     Column(
@@ -450,8 +450,6 @@ private fun PlayerBar(s: AppState) {
     val haptic = LocalHapticFeedback.current
     Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 12.dp, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp)) {
-            if (s.variantStatus.isNotBlank()) Text(s.variantStatus + " (끝나면 빠르게·느리게 들을 때 더 또렷해집니다)",
-                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val hidden = s.curIdx < 0 || s.curKind == "b" || s.curKind == "p"
                 AnimatedContent(targetState = if (hidden) -1 else s.curIdx, transitionSpec = { fadeIn(tween(90)) togetherWith fadeOut(tween(90)) }, label = "now", modifier = Modifier.weight(1f)) { idx ->
@@ -574,13 +572,6 @@ private fun Settings(s: AppState) {
         }
         Text("이 폰에 없는 목소리는 목록에 나오지 않습니다. 아직 만들지 않은 목소리의 미리 듣기는 음색 처리 전 소리입니다.",
             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-
-        Label("목소리 설정")
-        Chips(listOf(0 to "새 설정(권장)", 1 to "이전 설정"), { s.voiceProfile == it }) {
-            if (it != s.voiceProfile) { s.voices.releasePreview(); s.changeProfile(it); s.showSettings = false }
-        }
-        Text("'새 설정'은 '여성 · 차분'과 '남성 · 저음'의 그르렁거림을 줄이려고 음높이를 조금 올렸습니다(차분 0.9→0.94, 저음 0.84→0.92). '이전 설정'은 1.0.19의 음높이입니다. 바꾸면 지금 목소리를 새로 만들어 비교해 들을 수 있습니다.",
-            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
         Label("음색")
         Chips(kr.gapja60.SoftVoice.NAMES.mapIndexed { i, n -> i to n }, { s.softness == it }) {

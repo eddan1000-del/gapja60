@@ -23,11 +23,6 @@ class Prefs(ctx: Context) {
 
     /** 음색: 0 자연, 1 부드럽게(기본), 2 더 부드럽게 */
     var softness: Int get() = int("soft", 1); set(v) = setInt("soft", v)
-    /** 목소리 설정: 0 새 설정(권장, 그르렁거림 개선), 1 이전 설정(1.0.19 음높이) */
-    var voiceProfile: Int get() = int("vprof", 0); set(v) = setInt("vprof", v)
-    fun speechFactor(pack: String, variant: String): Float? =
-        p.getFloat("sf_${pack}_$variant", -1f).takeIf { it > 0f }
-    fun setSpeechFactor(pack: String, variant: String, v: Float) = setFloat("sf_${pack}_$variant", v)
     var voiceVersion: Int get() = int("voiceVer", 0); set(v) = setInt("voiceVer", v)
     /** 배경 소리 크기: 0 없음, 1 작게, 2 보통 */
     var bgLevel: Int get() = int("bg", 0); set(v) = setInt("bg", v)
