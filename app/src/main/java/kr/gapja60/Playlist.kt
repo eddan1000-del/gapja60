@@ -8,12 +8,11 @@ import java.io.File
 import kotlin.math.roundToInt
 
 /** 재생 목록 만들기. 모든 항목은 기기 안의 wav 파일이다. */
-class Playlist(private val vb: VoiceBank, private val prefs: Prefs) {
+class Playlist(private val vb: VoiceBank, private val prefs: Prefs, private val pack: () -> VoicePack) {
     companion object {
         const val K_KIND = "kind"    // g=간지 낭독, s=간격, b=빈칸(생각 시간), p=다음은?, t=효과음
         const val K_IDX = "idx"
         const val K_DIR = "dir"
-        const val K_FLIP = "flip"
         const val K_POS = "pos"
         const val K_TOTAL = "total"
         const val K_LAST = "last"
@@ -51,25 +50,25 @@ class Playlist(private val vb: VoiceBank, private val prefs: Prefs) {
         return b.build()
     }
 
-    private fun ex(kind: String, idx: Int, flip: Boolean, pos: Int = 0, total: Int = 0, last: Boolean = false) = Bundle().apply {
-        putString(K_KIND, kind); putInt(K_IDX, idx); putBoolean(K_FLIP, flip)
+    private fun ex(kind: String, idx: Int, pos: Int = 0, total: Int = 0, last: Boolean = false) = Bundle().apply {
+        putString(K_KIND, kind); putInt(K_IDX, idx)
         putInt(K_POS, pos); putInt(K_TOTAL, total); putBoolean(K_LAST, last)
     }
 
     private fun voice(dir: Direction, idx: Int, pos: Int, total: Int) =
-        item(vb.voice(idx, dir.flip), Gapja.hangul(idx, dir.flip), dir, ex("g", idx, dir.flip, pos, total))
+        item(vb.voice(pack(), idx), Gapja.hangul(idx), dir, ex("g", idx, pos, total))
 
     private fun gap(dir: Direction, idx: Int, pos: Int, total: Int, ms: Int, last: Boolean = false, kind: String = "s") =
-        item(vb.silence, Gapja.hangul(idx, dir.flip), dir, ex(kind, idx, dir.flip, pos, total, last), ms.coerceIn(30, 5900).toLong())
+        item(vb.silence, Gapja.hangul(idx), dir, ex(kind, idx, pos, total, last), ms.coerceIn(30, 5900).toLong())
 
     /** A. 연속 암송 */
-    fun recite(dir: Direction, seq: List<Int>, passes: Int): List<MediaItem> {
+    fun recite(dir: Direction, seq: List<Int>, passes: Int, gapMs: Int = prefs.gapMs): List<MediaItem> {
         val full = seq.size == 60
         val out = ArrayList<MediaItem>()
         repeat(passes.coerceAtLeast(1)) {
             seq.forEachIndexed { k, idx ->
                 out += voice(dir, idx, k + 1, seq.size)
-                out += gap(dir, idx, k + 1, seq.size, prefs.gapMs, last = full && k == seq.lastIndex)
+                out += gap(dir, idx, k + 1, seq.size, gapMs, last = full && k == seq.lastIndex)
             }
         }
         return out
@@ -82,7 +81,7 @@ class Playlist(private val vb: VoiceBank, private val prefs: Prefs) {
         val out = ArrayList<MediaItem>()
         seq.forEachIndexed { k, idx ->
             if (k in blank) {
-                out += item(vb.tick, "?", dir, ex("b", idx, dir.flip, k + 1, seq.size))
+                out += item(vb.tick, "?", dir, ex("b", idx, k + 1, seq.size))
                 out += gap(dir, idx, k + 1, seq.size, prefs.thinkMs, kind = "b")
             }
             out += voice(dir, idx, k + 1, seq.size)
@@ -98,12 +97,12 @@ class Playlist(private val vb: VoiceBank, private val prefs: Prefs) {
             out += voice(dir, idx, 0, 0)
             out += gap(dir, idx, 0, 0, prefs.gapMs)
         }
-        out += item(vb.next, "다음은?", dir, ex("p", answer, dir.flip))
+        out += item(vb.next(pack()), "다음은?", dir, ex("p", answer))
         return out
     }
 
     fun reveal(dir: Direction, answer: Int, ok: Boolean): List<MediaItem> = listOf(
-        item(if (ok) vb.ok else vb.ng, if (ok) "정답" else "오답", dir, ex("t", answer, dir.flip)),
+        item(if (ok) vb.ok else vb.ng, if (ok) "정답" else "오답", dir, ex("t", answer)),
         voice(dir, answer, 0, 0),
     )
 }

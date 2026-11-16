@@ -2,7 +2,9 @@
 
 package kr.gapja60.ui
 
+import android.app.Activity
 import android.content.Intent
+import android.view.WindowManager
 import android.speech.tts.TextToSpeech
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -52,6 +54,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -81,6 +84,7 @@ import kr.gapja60.Gapja
 import kr.gapja60.Mode
 import kr.gapja60.Script
 import kr.gapja60.VoiceBank
+import kr.gapja60.VoicePack
 import java.util.Locale
 
 @Composable
@@ -88,6 +92,7 @@ fun GapjaApp(s: AppState) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         when {
             !s.voiceReady -> VoiceSetup(s)
+            s.sleeping -> MaterialTheme(colorScheme = SleepColors) { SleepScreen(s) }
             s.showSettings -> Settings(s)
             else -> Home(s)
         }
@@ -106,7 +111,7 @@ private fun VoiceSetup(s: AppState) {
     LaunchedEffect(attempt) {
         error = null
         s.voices.status = { status = it }
-        val r = s.voices.build { n, total -> progress = n.toFloat() / total }
+        val r = s.voices.build(s.pack) { n, total -> progress = n.toFloat() / total }
         if (r is VoiceBank.Result.Ok) s.voiceReady = true else error = r
     }
 
@@ -120,11 +125,11 @@ private fun VoiceSetup(s: AppState) {
         Spacer(Modifier.height(32.dp))
         val e = error
         if (e == null) {
-            Text("음성을 준비하고 있습니다", style = MaterialTheme.typography.titleMedium)
+            Text("음성을 준비하고 있습니다 · ${s.pack.label}", style = MaterialTheme.typography.titleMedium)
             Text(status.ifBlank { "처음 한 번만 필요합니다 · 약 1~2분" }, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(20.dp))
             LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)))
-            Text("${(progress * 121).toInt()} / 121", Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("${(progress * 61).toInt()} / 61", Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             val msg = when (e) {
                 VoiceBank.Result.NoKorean -> "한국어 음성 데이터가 없습니다.\n'음성 데이터 설치'에서 한국어를 내려받은 뒤 다시 시도해 주세요."
@@ -200,16 +205,17 @@ private fun DirectionCards(s: AppState, onPick: () -> Unit) {
             for (col in 0..1) {
                 val d = dirs[row * 2 + col]
                 val sel = s.direction == d
-                val bg by animateColorAsState(if (sel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface, label = "dirBg")
-                val fg = if (sel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                val bg by animateColorAsState(if (sel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, label = "dirBg")
+                val fg = MaterialTheme.colorScheme.onSurface
                 Column(
                     Modifier.weight(1f).heightIn(min = 84.dp).clip(RoundedCornerShape(18.dp)).background(bg)
-                        .border(BorderStroke(1.dp, if (sel) Color.Transparent else MaterialTheme.colorScheme.outline), RoundedCornerShape(18.dp))
+                        .border(BorderStroke(if (sel) 2.dp else 1.dp, if (sel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline), RoundedCornerShape(18.dp))
                         .clickable { onPick(); s.selectDirection(d) }
                         .semantics { contentDescription = "${d.label}, ${d.sample}" + if (sel) ", 선택됨" else "" }
                         .padding(14.dp),
                 ) {
-                    Text(d.label, color = fg, fontWeight = FontWeight.Bold, fontSize = 17.sp, maxLines = 1, softWrap = false)
+                    Text((if (d.vertical) (if (d.reverse) "↑ " else "↓ ") else (if (d.reverse) "← " else "→ ")) + d.label,
+                        color = if (sel) MaterialTheme.colorScheme.primary else fg, fontWeight = FontWeight.Bold, fontSize = 17.sp, maxLines = 1, softWrap = false)
                     Spacer(Modifier.height(4.dp))
                     Text(d.sample, color = fg.copy(alpha = 0.85f), fontFamily = SerifGapja, fontSize = 15.sp, maxLines = 1, softWrap = false)
                 }
@@ -246,33 +252,41 @@ private fun GapjaGrid(s: AppState, onTap: () -> Unit) {
                     val ok = if (stats) s.prefs.okCount(shown.ordinal, i) else 0
                     val heat = if (ng + ok == 0) 0f else ng.toFloat() / (ng + ok)
                     val base = when {
-                        cur -> MaterialTheme.colorScheme.primary
+                        cur -> MaterialTheme.colorScheme.primary.copy(alpha = 0.32f)
                         stats && heat > 0f -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f + 0.6f * heat)
                         else -> MaterialTheme.colorScheme.surface
                     }
                     val bg by animateColorAsState(base, tween(120), label = "cell")
-                    val fg = if (cur) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                    val mark = i == s.abA || i == s.abB || (i == s.start && s.abA == null)
+                    val fg = MaterialTheme.colorScheme.onSurface
+                    val mark = cur || i == s.abA || i == s.abB || (i == s.start && s.abA == null)
                     val dim = (s.mode == Mode.RECITE || s.mode == Mode.BLANK) && i !in inSeq
                     Column(
                         Modifier.weight(1f).aspectRatio(0.74f).clip(RoundedCornerShape(9.dp)).background(bg)
                             .border(if (mark) 2.dp else 0.5.dp, if (mark) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), RoundedCornerShape(9.dp))
                             .alpha(if (dim) 0.35f else 1f)
                             .clickable { onTap(); s.tapCell(i) }
-                            .semantics { contentDescription = "${Gapja.hangul(i, shown.flip)}, ${i + 1}번째" },
+                            .semantics { contentDescription = "${Gapja.hangul(i)}, ${i + 1}번째" },
                         verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        val main = when (s.script) { Script.HANGUL -> Gapja.hangul(i, shown.flip); else -> Gapja.hanja(i, shown.flip) }
+                        val main = when (s.script) { Script.HANGUL -> Gapja.hangul(i); else -> Gapja.hanja(i) }
                         Text(main, fontFamily = SerifGapja, color = fg, fontSize = 13.sp, lineHeight = 14.sp, maxLines = 1, softWrap = false)
-                        if (s.script == Script.BOTH) Text(Gapja.hangul(i, shown.flip), color = fg.copy(alpha = 0.7f), fontSize = 9.sp, lineHeight = 10.sp, maxLines = 1, softWrap = false)
+                        if (s.script == Script.BOTH) Text(Gapja.hangul(i), color = fg.copy(alpha = 0.7f), fontSize = 9.sp, lineHeight = 10.sp, maxLines = 1, softWrap = false)
                     }
                 }
             }
         }
     }
     Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text("가로 한 줄 = 한 순(갑자순…갑인순)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(if (shown.reverse) "← 역행" else "→ 순행", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+        Text("가로 = 한 순 · 세로 = 같은 천간", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            when (shown) {
+                Direction.FORWARD -> "→ 가로로"
+                Direction.BACKWARD -> "← 가로로 거꾸로"
+                Direction.FORWARD_FLIP -> "↓ 세로로 위에서 아래"
+                Direction.BACKWARD_FLIP -> "↑ 세로로 아래에서 위"
+            },
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold,
+        )
     }
 }
 
@@ -291,9 +305,12 @@ private fun <T> Chips(options: List<Pair<T, String>>, selected: (T) -> Boolean, 
 
 @Composable
 private fun XunChips(s: AppState) {
-    Label("구간 (순)")
-    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-        for (r in 0..1) Chips((r * 3 until r * 3 + 3).map { it to Gapja.XUN[it] }, { it in s.xuns && s.abA == null }) { s.toggleXun(it) }
+    if (s.direction.vertical) {
+        Label("구간 (천간 열)")
+        for (r in 0..1) Chips((r * 5 until r * 5 + 5).map { it to Gapja.STEMS[it] + " 열" }, { it in s.groups && s.abA == null }) { s.toggleGroup(it) }
+    } else {
+        Label("구간 (순)")
+        for (r in 0..1) Chips((r * 3 until r * 3 + 3).map { it to Gapja.XUN[it] }, { it in s.groups && s.abA == null }) { s.toggleGroup(it) }
     }
 }
 
@@ -303,7 +320,7 @@ private fun RangeRow(s: AppState) {
         FilledTonalButton(onClick = { s.abPicking = !s.abPicking; if (s.abPicking) { s.abA = null; s.abB = null } }, modifier = Modifier.heightIn(min = 48.dp)) {
             Text(if (s.abPicking) (if (s.abA == null) "A 칸을 누르세요" else "B 칸을 누르세요") else "A–B 구간")
         }
-        if (s.abA != null && s.abB != null) Text("${Gapja.hangul(s.abA!!, s.direction.flip)} → ${Gapja.hangul(s.abB!!, s.direction.flip)}", fontFamily = SerifGapja)
+        if (s.abA != null && s.abB != null) Text("${Gapja.hangul(s.abA!!)} → ${Gapja.hangul(s.abB!!)}", fontFamily = SerifGapja)
         Spacer(Modifier.weight(1f))
         TextButton(onClick = { s.clearRange() }) { Text("초기화") }
     }
@@ -312,6 +329,10 @@ private fun RangeRow(s: AppState) {
 @Composable
 private fun RecitePanel(s: AppState) {
     Text("표의 간지를 누르면 그 자리부터 재생합니다.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Spacer(Modifier.height(10.dp))
+    OutlinedButton(onClick = { s.startSleep() }, Modifier.fillMaxWidth().height(56.dp)) {
+        Text("☾  수면 모드로 듣기  ·  ${"%.1f".format(Locale.US, s.prefs.sleepSpeed)}배 · ${s.prefs.sleepTimer}분")
+    }
     XunChips(s)
     RangeRow(s)
     Label("반복")
@@ -347,7 +368,7 @@ private fun NextPanel(s: AppState) {
         Chips(listOf(1 to "1개", 2 to "2개", 3 to "3개"), { s.ctxCount == it }) { s.setCtx(it) }
         return
     }
-    val ctxText = kr.gapja60.Sequencer.before(s.direction, s.qAnswer, s.ctxCount).joinToString(" · ") { Gapja.hangul(it, s.direction.flip) }
+    val ctxText = kr.gapja60.Sequencer.before(s.direction, s.qAnswer, s.ctxCount).joinToString(" · ") { Gapja.hangul(it) }
     Text("$ctxText · ?", fontFamily = SerifGapja, fontSize = 22.sp, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
     Spacer(Modifier.height(10.dp))
     for (r in 0..1) {
@@ -356,18 +377,18 @@ private fun NextPanel(s: AppState) {
                 val i = s.qChoices[r * 2 + c]
                 val done = s.qPicked >= 0
                 val color = when {
-                    done && i == s.qAnswer -> Color(0xFF2E7D4F)
-                    done && i == s.qPicked -> MaterialTheme.colorScheme.primary
+                    done && i == s.qAnswer -> Correct
+                    done && i == s.qPicked -> MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
                     else -> MaterialTheme.colorScheme.surface
                 }
-                val fg = if (done && (i == s.qAnswer || i == s.qPicked)) Color.White else MaterialTheme.colorScheme.onSurface
+                val fg = if (done && i == s.qAnswer) Color(0xFFF4EFE5) else MaterialTheme.colorScheme.onSurface
                 Column(
                     Modifier.weight(1f).height(84.dp).clip(RoundedCornerShape(18.dp)).background(color)
                         .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(18.dp))
                         .clickable(enabled = !done) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress); s.pick(i)
                         }
-                        .semantics { contentDescription = Gapja.hangul(i, s.direction.flip) },
+                        .semantics { contentDescription = Gapja.hangul(i) },
                     verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(s.label(i), fontFamily = SerifGapja, fontSize = 26.sp, color = fg)
@@ -472,34 +493,110 @@ private fun RoundBtn(text: String, desc: String, size: Int, primary: Boolean = f
     ) { Text(text, color = fg, fontSize = (size / 2.8).sp, fontWeight = FontWeight.Bold) }
 }
 
+// ───────────────────────── 수면 화면 ─────────────────────────
+@Composable
+private fun SleepScreen(s: AppState) {
+    val ctx = LocalContext.current
+    BackHandler { s.exitSleep() }
+    // 화면 밝기를 최소로(나가면 원래대로)
+    DisposableEffect(Unit) {
+        val w = (ctx as? Activity)?.window
+        val before = w?.attributes?.screenBrightness ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        w?.let { it.attributes = it.attributes.apply { screenBrightness = 0.02f } }
+        onDispose { w?.let { it.attributes = it.attributes.apply { screenBrightness = before } } }
+    }
+    Column(
+        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().navigationBarsPadding().padding(28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.weight(1f))
+        val idx = s.curIdx
+        Text(if (idx >= 0) s.label(idx) else "☾", fontFamily = SerifGapja, fontSize = 64.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f))
+        Spacer(Modifier.height(12.dp))
+        Text(s.direction.label, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+        Spacer(Modifier.weight(1f))
+        Text("화면을 꺼도 계속 재생됩니다.\n${s.prefs.sleepTimer}분 뒤 ${s.prefs.sleepFadeMin}분에 걸쳐 소리가 서서히 작아지며 멈춥니다.",
+            fontSize = 13.sp, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+        Spacer(Modifier.height(20.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = { s.toggle() }, Modifier.weight(1f).height(56.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) { Text(if (s.playing) "멈춤" else "재생", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            OutlinedButton(onClick = { s.exitSleep() }, Modifier.weight(1f).height(56.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) { Text("수면 모드 끝내기", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+    }
+}
+
 // ───────────────────────── 설정 ─────────────────────────
 @Composable
 private fun Settings(s: AppState) {
-    BackHandler { s.showSettings = false }
+    BackHandler { s.voices.releasePreview(); s.showSettings = false }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var gap by remember { mutableStateOf(s.prefs.gapMs.toFloat()) }
     var confirmVoice by remember { mutableStateOf(false) }
+    var packs by remember { mutableStateOf<List<VoicePack>?>(null) }
+    var sleepSpeed by remember { mutableStateOf(s.prefs.sleepSpeed) }
+    var sleepGap by remember { mutableIntStateOf(s.prefs.sleepGapMs) }
+    var sleepTimer by remember { mutableIntStateOf(s.prefs.sleepTimer) }
+    var sleepFade by remember { mutableIntStateOf(s.prefs.sleepFadeMin) }
     val version = remember { runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "" }
+    LaunchedEffect(Unit) { packs = s.voices.availablePacks() }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { s.showSettings = false }) { Text("← 돌아가기") }
-        }
+        TextButton(onClick = { s.voices.releasePreview(); s.showSettings = false }) { Text("← 돌아가기") }
         Text("설정", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+
+        // 음성
+        Label("목소리")
+        val list = packs
+        if (list == null) Text("이 폰에서 쓸 수 있는 목소리를 찾는 중…", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else list.forEach { p ->
+            val sel = p.id == s.pack.id
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(14.dp))
+                    .background(if (sel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
+                    .border(if (sel) 2.dp else 1.dp, if (sel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
+                    .clickable { s.voices.stopPreview(); s.selectPack(p); if (!s.voiceReady) { s.voices.releasePreview(); s.showSettings = false } }
+                    .semantics { contentDescription = "${p.label}, ${p.desc}" + if (sel) ", 선택됨" else "" }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(p.label, fontWeight = FontWeight.Bold, color = if (sel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                    Text(p.desc + if (s.voices.isReady(p)) "" else " · 선택하면 1~2분 준비", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = { scope.launch { s.voices.preview(p) } }) { Text("미리 듣기") }
+            }
+        }
+        Text("이 폰에 없는 목소리는 목록에 나오지 않습니다. 모든 목소리는 높은 톤을 피하도록 음높이를 낮춰 만듭니다.",
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+
         Label("표기")
         Chips(Script.entries.map { it to it.label }, { s.script == it }) { s.script = it; s.prefs.script = it.ordinal }
-        Label("화면")
-        Chips(listOf(0 to "시스템", 1 to "밝게", 2 to "어둡게"), { s.theme == it }) { s.theme = it; s.prefs.theme = it }
+        Label("화면 색")
+        Chips(listOf(0 to "자동", 1 to "낮", 2 to "밤", 3 to "수면"), { s.theme == it }) { s.theme = it; s.prefs.theme = it }
+        Text("오래 볼 때는 '밤'이나 '수면'에 폰의 화면 밝기를 낮추고, 폰 설정의 '야간 모드(블루라이트 필터)'를 함께 쓰면 눈이 덜 부십니다.",
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
         Label("간지 사이 쉬는 시간 ${gap.toInt()}ms (1배속 기준, 배속에 비례해 줄어듦)")
         Slider(value = gap, onValueChange = { gap = (it / 50).toInt() * 50f; s.prefs.gapMs = gap.toInt() }, valueRange = 50f..1500f)
-        Text("새 설정은 다음 재생부터 적용됩니다.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-        Label("음성")
-        Text(s.prefs.voiceInfo.ifBlank { "사용자 제공 음성 파일" }, fontSize = 14.sp)
+        Label("수면 모드 속도")
+        Chips(listOf(0.6f to "0.6배", 0.7f to "0.7배", 0.8f to "0.8배", 1.0f to "1배"), { sleepSpeed == it }) { sleepSpeed = it; s.prefs.sleepSpeed = it }
+        Label("수면 모드 간지 사이 쉬는 시간")
+        Chips(listOf(1000 to "1초", 1500 to "1.5초", 2000 to "2초", 3000 to "3초"), { sleepGap == it }) { sleepGap = it; s.prefs.sleepGapMs = it }
+        Label("수면 모드 타이머")
+        Chips(listOf(15 to "15분", 30 to "30분", 45 to "45분", 60 to "60분"), { sleepTimer == it }) { sleepTimer = it; s.prefs.sleepTimer = it }
+        Label("끝날 때 소리를 서서히 줄이는 시간")
+        Chips(listOf(1 to "1분", 2 to "2분", 3 to "3분"), { sleepFade == it }) { sleepFade = it; s.prefs.sleepFadeMin = it }
+        Text("수면 모드는 효과음 없이 무한 반복하며, 화면을 꺼도 계속 재생됩니다. 새 설정은 다음 재생부터 적용됩니다.",
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        Label("음성 파일")
+        Text(s.prefs.voiceInfo(s.pack.id).ifBlank { s.pack.label }, fontSize = 14.sp)
         Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = { confirmVoice = true }, Modifier.fillMaxWidth().height(52.dp)) { Text("음성 다시 만들기") }
-        Text("기기의 음성 설정(엔진·목소리)을 바꾼 뒤 다시 만들면 새 목소리로 바뀝니다.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(onClick = { confirmVoice = true }, Modifier.fillMaxWidth().height(52.dp)) { Text("지금 목소리 다시 만들기") }
 
         Spacer(Modifier.height(24.dp))
         HorizontalDivider()
@@ -512,12 +609,12 @@ private fun Settings(s: AppState) {
 
     if (confirmVoice) AlertDialog(
         onDismissRequest = { confirmVoice = false },
-        title = { Text("음성을 다시 만들까요?") },
-        text = { Text("현재 음성 파일을 지우고 기기의 음성으로 다시 만듭니다. 1~2분 걸립니다.") },
+        title = { Text("목소리를 다시 만들까요?") },
+        text = { Text("'${s.pack.label}' 음성 파일을 지우고 다시 만듭니다. 1~2분 걸립니다.") },
         confirmButton = {
             Button(onClick = {
                 confirmVoice = false
-                scope.launch { s.stop(); s.voices.clear(); s.showSettings = false; s.voiceReady = false }
+                scope.launch { s.stop(); s.voices.clear(s.pack); s.voices.releasePreview(); s.showSettings = false; s.voiceReady = false }
             }) { Text("다시 만들기") }
         },
         dismissButton = { TextButton(onClick = { confirmVoice = false }) { Text("취소") } },

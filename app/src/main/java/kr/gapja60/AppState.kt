@@ -18,14 +18,16 @@ enum class Mode(val label: String) { RECITE("암송"), BLANK("빈칸"), NEXT("�
 
 /** 화면 상태와 재생 제어. */
 class AppState(ctx: Context) {
-    val prefs = Prefs(ctx)
-    val voices = VoiceBank(ctx)
-    private val playlist = Playlist(voices, prefs)
+    val prefs = Prefs(ctx).apply { migrateV2() }
+    val voices = VoiceBank(ctx).apply { cleanupLegacy() }
+    var pack by mutableStateOf(VoicePacks.byId(prefs.voicePack))
+        private set
+    private val playlist = Playlist(voices, prefs) { pack }
 
     var controller: MediaController? by mutableStateOf(null)
         private set
 
-    var voiceReady by mutableStateOf(voices.isReady())
+    var voiceReady by mutableStateOf(voices.isReady(pack))
     var direction by mutableStateOf(Direction.entries[prefs.direction.coerceIn(0, 3)])
         private set
     var mode by mutableStateOf(Mode.RECITE)
@@ -43,8 +45,12 @@ class AppState(ctx: Context) {
     var curTotal by mutableIntStateOf(0)
     var ended by mutableStateOf(false)
 
+    // 수면 모드
+    var sleeping by mutableStateOf(false)
+    private var speedBeforeSleep = 1f
+
     // 범위
-    var xuns by mutableStateOf(prefs.xuns)
+    var groups by mutableStateOf(prefs.groups(direction.vertical))
     var start by mutableStateOf<Int?>(null)
     var abA by mutableStateOf<Int?>(null)
     var abB by mutableStateOf<Int?>(null)
@@ -102,17 +108,19 @@ class AppState(ctx: Context) {
     // ---- 방향·범위 ----
     fun selectDirection(d: Direction) {
         if (d == direction) return
+        val orientationChanged = d.vertical != direction.vertical
         direction = d
         prefs.direction = d.ordinal
+        if (orientationChanged) { groups = prefs.groups(d.vertical); start = null; abA = null; abB = null }
         stop()
     }
 
-    fun sequence(): List<Int> = Sequencer.sequence(direction, Range(xuns, start, abA, abB))
+    fun sequence(): List<Int> = Sequencer.sequence(direction, Range(groups, start, abA, abB))
 
-    fun toggleXun(x: Int) {
-        xuns = if (x in xuns) xuns - x else xuns + x
-        if (xuns.isEmpty()) xuns = setOf(x)
-        prefs.xuns = xuns
+    fun toggleGroup(x: Int) {
+        groups = if (x in groups) groups - x else groups + x
+        if (groups.isEmpty()) groups = setOf(x)
+        prefs.setGroups(direction.vertical, groups)
         abA = null; abB = null
     }
 
@@ -128,7 +136,10 @@ class AppState(ctx: Context) {
         }
     }
 
-    fun clearRange() { start = null; abA = null; abB = null; abPicking = false; xuns = (0..5).toSet(); prefs.xuns = xuns }
+    fun clearRange() {
+        start = null; abA = null; abB = null; abPicking = false
+        groups = (0 until direction.groupCount).toSet(); prefs.setGroups(direction.vertical, groups)
+    }
 
     // ---- 재생 ----
     fun changeSpeed(v: Float) {
@@ -189,7 +200,36 @@ class AppState(ctx: Context) {
 
     fun setSleep(min: Int) {
         sleepMin = min
-        controller?.sendCustomCommand(SessionCommand(PlaybackService.CMD_SLEEP, Bundle.EMPTY), Bundle().apply { putInt("min", min) })
+        controller?.sendCustomCommand(
+            SessionCommand(PlaybackService.CMD_SLEEP, Bundle.EMPTY),
+            Bundle().apply { putInt("min", min); putInt("fade", prefs.sleepFadeMin) },
+        )
+    }
+
+    // ---- 수면 모드: 느리게, 간격 길게, 효과음 없이, 무한 반복, 타이머 끝에 서서히 작아짐 ----
+    fun startSleep() {
+        val seq = sequence().ifEmpty { direction.order() }
+        if (mode != Mode.RECITE) mode = Mode.RECITE
+        speedBeforeSleep = speed
+        speed = prefs.sleepSpeed
+        sleeping = true
+        load(playlist.recite(direction, seq, 1, gapMs = prefs.sleepGapMs), loop = true)
+        setSleep(prefs.sleepTimer)
+    }
+
+    fun exitSleep() {
+        sleeping = false
+        speed = speedBeforeSleep
+        controller?.setPlaybackSpeed(speed)
+    }
+
+    // ---- 음성 버전 ----
+    fun selectPack(p: VoicePack) {
+        if (p.id == pack.id) return
+        stop()
+        pack = p
+        prefs.voicePack = p.id
+        voiceReady = voices.isReady(p)
     }
 
     // ---- 빈칸 ----
@@ -239,11 +279,7 @@ class AppState(ctx: Context) {
     fun setCtx(n: Int) { ctxCount = n; prefs.contextCount = n }
 
     // ---- 표기 ----
-    fun label(idx: Int, flip: Boolean = direction.flip): String = when (script) {
-        Script.HANGUL -> Gapja.hangul(idx, flip)
-        Script.HANJA -> Gapja.hanja(idx, flip)
-        Script.BOTH -> Gapja.hanja(idx, flip)
-    }
+    fun label(idx: Int): String = if (script == Script.HANGUL) Gapja.hangul(idx) else Gapja.hanja(idx)
 
-    fun sub(idx: Int, flip: Boolean = direction.flip): String? = if (script == Script.BOTH) Gapja.hangul(idx, flip) else null
+    fun sub(idx: Int): String? = if (script == Script.BOTH) Gapja.hangul(idx) else null
 }

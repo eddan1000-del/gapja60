@@ -15,7 +15,7 @@ try: root=ET.parse('shots/ui.xml').getroot()
 except Exception: sys.exit()
 for n in root.iter('node'):
     t=n.get('text',''); d=n.get('content-desc','')
-    if t==key or d==key or d.startswith(key+',') :
+    if t==key or d==key or d.startswith(key+',') or (len(key)>1 and t.startswith(key)):
         a=list(map(int,re.findall(r'\d+',n.get('bounds'))))
         print((a[0]+a[2])//2,(a[1]+a[3])//2); break
 PY
@@ -42,8 +42,9 @@ sleep 4; shot 4-speed5
 dump; grep -o 'text="[^"]*×"' shots/ui.xml >> shots/report.txt
 
 tap '역행 뒤집기'; sleep 2; tap '재생'; sleep 3; shot 5-backward-flip
-dump; grep -o 'text="[^"]*/ 60[^"]*"' shots/ui.xml >> shots/report.txt
-
+dump; echo "BACKWARD_FLIP:" >> shots/report.txt; grep -o 'text="[^"]*/ 60[^"]*"' shots/ui.xml >> shots/report.txt
+tap '순행 뒤집기'; sleep 2; tap '재생'; sleep 3; shot 5b-forward-flip
+dump; echo "FORWARD_FLIP:" >> shots/report.txt; grep -o 'text="[^"]*/ 60[^"]*"' shots/ui.xml >> shots/report.txt
 # 백그라운드 재생 확인
 adb shell input keyevent KEYCODE_HOME; sleep 5
 echo "--- after HOME ---" >> shots/report.txt
@@ -53,8 +54,11 @@ adb shell am start -n $PKG/kr.gapja60.MainActivity; sleep 3
 tap '잇기'; sleep 2; tap '시작'; sleep 5; shot 6-next
 tap '빈칸'; sleep 2; shot 7-blank
 tap '기록'; sleep 2; shot 8-stats
-tap '설정'; sleep 2; shot 9-settings
-
+tap '암송'; sleep 2; tap '☾'; sleep 5; shot 10-sleep
+adb shell dumpsys media_session | grep -m1 -E "state=PlaybackState" | sed 's/^/SLEEP /' >> shots/report.txt
+tap '수면 모드 끝내기'; sleep 2
+tap '설정'; sleep 6; shot 9-settings
+adb shell input swipe 500 1800 500 600 300; sleep 1; shot 9b-settings
 adb logcat -d > shots/logcat.txt
 echo "--- TTS log ---" >> shots/report.txt
 grep -E "Gapja60|TextToSpeech|TtsService|GoogleTTS|tts" shots/logcat.txt | grep -v Phenotype | head -60 >> shots/report.txt

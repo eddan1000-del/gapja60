@@ -30,7 +30,18 @@ class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
     private lateinit var player: ExoPlayer
     private val handler = Handler(Looper.getMainLooper())
-    private val sleepRunnable = Runnable { player.pause() }
+    // 잠들기 타이머: 끝나기 fade분 전부터 음량을 서서히 줄인 뒤 멈춤
+    private var fadeEnd = 0L
+    private var fadeMs = 0L
+    private val fadeStep = object : Runnable {
+        override fun run() {
+            val left = fadeEnd - SystemClock.elapsedRealtime()
+            if (left <= 0) { player.pause(); player.volume = 1f; return }
+            player.volume = (left.toFloat() / fadeMs).coerceIn(0f, 1f).let { it * it }   // 귀에 자연스럽게 줄어들도록 제곱 곡선
+            handler.postDelayed(this, 500)
+        }
+    }
+    private val sleepRunnable = Runnable { handler.post(fadeStep) }
     private var playStart = 0L
 
     override fun onCreate() {
@@ -85,9 +96,15 @@ class PlaybackService : MediaSessionService() {
             args: Bundle,
         ): ListenableFuture<SessionResult> {
             if (customCommand.customAction == CMD_SLEEP) {
-                handler.removeCallbacks(sleepRunnable)
+                handler.removeCallbacks(sleepRunnable); handler.removeCallbacks(fadeStep)
+                player.volume = 1f
                 val min = args.getInt("min", 0)
-                if (min > 0) handler.postDelayed(sleepRunnable, min * 60_000L)
+                if (min > 0) {
+                    val total = min * 60_000L
+                    fadeMs = (args.getInt("fade", 2) * 60_000L).coerceIn(5_000L, total / 2)
+                    fadeEnd = SystemClock.elapsedRealtime() + total
+                    handler.postDelayed(sleepRunnable, total - fadeMs)
+                }
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
             return super.onCustomCommand(session, controller, customCommand, args)
@@ -110,7 +127,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        handler.removeCallbacks(sleepRunnable)
+        handler.removeCallbacks(sleepRunnable); handler.removeCallbacks(fadeStep)
         session?.run { player.release(); release() }
         session = null
         super.onDestroy()
