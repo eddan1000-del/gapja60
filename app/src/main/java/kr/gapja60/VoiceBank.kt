@@ -143,7 +143,7 @@ class VoiceBank(private val ctx: Context) {
     fun releasePreview() { previewTts?.shutdown(); previewTts = null }
 
     // ───────── 만들기 ─────────
-    suspend fun build(p: VoicePack, forceLocal: Boolean = false, onProgress: (Int, Int) -> Unit): Result {
+    suspend fun build(p: VoicePack, onProgress: (Int, Int) -> Unit, forceLocal: Boolean = false): Result {
         withContext(Dispatchers.IO) { writeTones() }
         if (copyFromAssets(p, onProgress)) return Result.Ok
 
@@ -225,7 +225,7 @@ class VoiceBank(private val ctx: Context) {
                 clear(p)
                 status("인터넷 연결이 없어 기기 안 목소리로 만듭니다")
                 tts.shutdown()
-                return build(p, forceLocal = true, onProgress = onProgress)
+                return build(p, onProgress, forceLocal = true)
             }
             onProgress(jobs.size, jobs.size)
             return Result.Ok
