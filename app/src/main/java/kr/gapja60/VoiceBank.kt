@@ -74,17 +74,10 @@ object VoicePacks {
         VoicePack("m_clear", "남성 · 또렷", "중저음, 또박또박", listOf("koc", "kod"), 0.85f, 0.9f, fastPitchScale = 1.06f),
         // 미소년: 남성 kod의 음높이를 올려 젊고 맑게. 실험(2026-11-16)에서 1.15~1.2가 기본 주파수 약 148~155Hz
         // (높지 않은 젊은 남성 음역)로, 맑음 지수(HNR 4.6~5.0dB)·떨림(3.2%)이 남성 목소리 중 가장 좋았다
-        // 2판: 사용자 피드백 '힘이 들어가 부담스럽다' → 음높이 1.18→1.14(약 150Hz, 실험상 1.15에서 떨림 3.2%·HNR 4.6dB),
-        //      말 속도 0.9→0.86, 밝게 살리던 처리를 '힘 뺀 음색'으로
-        VoicePack("m_boy", "남성 · 미소년", "높지 않은 톤, 맑고 편안하게", listOf("kod", "koc"), 1.12f, 0.86f,
-            relaxed = true, softProsody = true, normalNetwork = true, ver = 3),
-        // 미소년 · 부드러움: 여성 목소리를 낮춰 만든 소년 톤(애니메이션 미소년 역을 여성 성우가 맡는 방식).
-        // 실험: kob 네트워크 0.85 → 약 165Hz, 떨림 2.8%, HNR 5.4dB
-        VoicePack("b_boy", "미소년 · 부드러움", "여성 목소리를 낮춘 부드러운 소년 톤", listOf("kob", "ism"), 0.85f, 0.86f,
-            relaxed = true, softProsody = true, normalNetwork = true),
         VoicePack("default", "기기 기본", "이 폰의 기본 한국어 음성, 맑은 중저음", emptyList(), 0.9f, 0.86f, fastNetwork = false),
     )
-    fun byId(id: String) = ALL.firstOrNull { it.id == id } ?: ALL.last()
+    /** 없는 id(삭제된 목소리 등)는 '여성 · 차분'으로 */
+    fun byId(id: String) = ALL.firstOrNull { it.id == id } ?: ALL.first()
 }
 
 /**
@@ -172,6 +165,9 @@ class VoiceBank(private val ctx: Context) {
             }
             prefs.variantVersion = VARIANT_VERSION
         }
+        // 삭제된 목소리(미소년 등)의 파일 정리
+        val keep = VoicePacks.ALL.flatMap { p -> Variant.entries.map { p.id + it.suffix } }.toSet()
+        root.listFiles()?.filter { it.isDirectory && it.name !in keep }?.forEach { it.deleteRecursively() }
         // 목소리별로 설정이 바뀐 것만 다시 만든다
         VoicePacks.ALL.forEach { p ->
             if (prefs.packVersion(p.id) < p.ver) { clear(p); prefs.setPackVersion(p.id, p.ver) }

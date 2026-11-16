@@ -24,7 +24,7 @@ enum class Mode(val label: String) { RECITE("암송"), BLANK("빈칸"), NEXT("�
 class AppState(ctx: Context) {
     val prefs = Prefs(ctx).apply { migrateV2() }
     val voices = VoiceBank(ctx).apply { cleanupLegacy(); upgradeIfNeeded(prefs) }
-    var pack by mutableStateOf(VoicePacks.byId(prefs.voicePack))
+    var pack by mutableStateOf(VoicePacks.byId(prefs.voicePack).also { if (it.id != prefs.voicePack) prefs.voicePack = it.id })
         private set
     private val scope = MainScope()
     /** 지금 재생 목록에 쓰인 속도별 음성 묶음 */
